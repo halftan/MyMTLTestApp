@@ -6,11 +6,19 @@
 //
 
 import Metal
+import AVFoundation
 
 extension Metal4Renderer {
-    func compilerRenderPipeline(_ format: MTLPixelFormat) -> MTLRenderPipelineState? {
+    func compileRenderPipeline(for transferFunction: String) -> MTLRenderPipelineState? {
         let compiler = try! self.device.makeCompiler(descriptor: MTL4CompilerDescriptor())
-        let descriptor = self.configureRenderPipeline(format)
+        
+        let descriptor = MTL4RenderPipelineDescriptor()
+        descriptor.label = "Basic Metal 4 render pipeline"
+        
+        descriptor.colorAttachments[0].pixelFormat = self.colorPixelFormat
+        descriptor.vertexFunctionDescriptor = self.makeVertexShaderDescriptor()
+        descriptor.fragmentFunctionDescriptor = self.makeFragmentShaderDescriptor(for: transferFunction)
+        descriptor.maxVertexAmplificationCount = 2
         let compilerTasksOpt = self.configureCompilerTaskOptions()
         
         do {
@@ -23,28 +31,26 @@ extension Metal4Renderer {
         return nil
     }
     
-    func configureRenderPipeline(_ format: MTLPixelFormat) -> MTL4RenderPipelineDescriptor {
-        let descriptor = MTL4RenderPipelineDescriptor()
-        descriptor.label = "Basic Metal 4 render pipeline"
-        
-        descriptor.colorAttachments[0].pixelFormat = format
-        descriptor.vertexFunctionDescriptor = self.makeVertexShaderDescriptor()
-        descriptor.fragmentFunctionDescriptor = self.makeFragmentShaderDescriptor()
-        
-        return descriptor
-    }
-    
     func makeVertexShaderDescriptor() -> MTL4LibraryFunctionDescriptor {
         let descriptor = MTL4LibraryFunctionDescriptor()
         descriptor.library = self.library
-        descriptor.name = "vertexShader"
+        descriptor.name = "vertex_main"
         return descriptor
     }
 
-    func makeFragmentShaderDescriptor() -> MTL4LibraryFunctionDescriptor {
+    func makeFragmentShaderDescriptor(for transferFunction: String) -> MTL4LibraryFunctionDescriptor {
         let descriptor = MTL4LibraryFunctionDescriptor()
         descriptor.library = self.library
-        descriptor.name = "fragmentShader"
+        let fragmentFunctionName = switch transferFunction {
+//        case AVVideoTransferFunction_SMPTE_ST_2084_PQ:
+//            "fragment_tonemap_pq"
+//        case AVVideoTransferFunction_ITU_R_2100_HLG:
+//            "fragment_tonemap_hlg"
+        default:
+            "fragment_linear"
+        }
+        print("Selected fargment func: \(fragmentFunctionName)")
+        descriptor.name = fragmentFunctionName
         return descriptor
     }
     

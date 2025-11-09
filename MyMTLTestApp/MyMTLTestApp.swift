@@ -9,45 +9,25 @@ import SwiftUI
 
 @main
 struct MyMTLTestApp: App {
-//    @State private var videoModel: VideoModel
-//    @State private var renderer: Metal4Renderer
-    
-//    init() {
-//        let videoModel = VideoModel()
-//        self.videoModel = videoModel
-//        self.renderer = Metal4Renderer(video: videoModel)
-//    }
-    
-    @Environment(\.openWindow) private var openWindow
-    @State private var video = VideoModel()
-    
+    @State private var appModel = AppModel()
+
     var body: some Scene {
-        WindowGroup("Main Window", id: "main") {
-//            MetalView(delegate: self.renderer)
-            OpenVideoView(video: video)
-                .frame(width: 200, height: 100, alignment: .center)
-                .padding()
-                .onDisappear() {
-                    print("Disappear")
-                }
+        WindowGroup(id: appModel.mainWindowID) {
+            ContentView()
+                .environment(appModel)
         }
-#if os(macOS)
+        #if os(macOS)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
-#endif
-        .defaultSize(width: 400, height: 200)
+        #endif
         .windowResizability(.contentSize)
         
-        WindowGroup("Player", id: "player") {
-            PlayerView(video: video)
-                .onDisappear() {
-                    video.cleanup()
-                }
-                .aspectRatio(video.naturalSize, contentMode: .fit)
+        #if os(visionOS)
+        WindowGroup(id: appModel.realityWindowID) {
+            VRPlayerView()
         }
-#if os(macOS)
-        .windowStyle(.hiddenTitleBar)
-#endif
-        .windowResizability(.contentSize)
+        .defaultSize(width: 0.8, height: 0.5, depth: 1.0, in: .meters)
+        .windowStyle(.plain)
+        #endif
     }
 }

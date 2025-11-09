@@ -8,6 +8,14 @@
 import SwiftUI
 import AVKit
 
+extension CGFloat {
+    static var defaultAspectRatio: Self {
+        get {
+            return 16.0 / 9.0
+        }
+    }
+}
+
 @Observable
 class VideoModel {
     var url: URL? {
@@ -23,23 +31,32 @@ class VideoModel {
     
     // Video track properties
     private(set) var naturalSize: CGSize = .zero
-    
-    private var asset: AVAsset? {
-        didSet {
-            print("\(self.debugDescription): asset set to: \(asset)")
-            // Cancel loading of old asset when replaced
-            if let oldAsset = oldValue, oldAsset !== asset {
-                cancelAssetLoading()
+    var aspectRatio: CGFloat {
+        get {
+            if naturalSize != .zero {
+                return naturalSize.width / naturalSize.height
             }
+            return .defaultAspectRatio
+        }
+    }
+    
+    private var asset: AVAsset?
+    var assetIsHDR = false
+    var assetPreferredTransform: CGAffineTransform = .identity
+    var videoColorProperties: [String: any Sendable] = [:]
+    
+    var transferFunction: String {
+        get {
+            return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
         }
     }
     
     let player: AVPlayer = AVPlayer()
     
     private var timeObserver: Any?
-    
-    init() {
-    }
+    var statusObserver: NSKeyValueObservation?
+    var videoOutput: AVPlayerItemVideoOutput?
+//    var displayLink: CADisplayLink?
     
     @MainActor
     deinit {
@@ -52,9 +69,6 @@ class VideoModel {
     }
     
     func load(_ url: URL) async throws {
-        // Cancel loading of current asset before loading new one
-        cancelAssetLoading()
-        
         // Stop accessing the old URL's security scoped resource if it exists
         if let oldURL = _url {
             oldURL.stopAccessingSecurityScopedResource()
@@ -75,28 +89,59 @@ class VideoModel {
         player.replaceCurrentItem(with: playerItem)
         addPeriodicTimeObserver()
         
-        await loadNaturalSize()
+        try await parseVideoMetadata()
+        try await prepareForRender()
     }
     
-    private func loadNaturalSize() async {
-        guard let asset = asset else { return }
+    func parseVideoMetadata() async throws {
+        guard let asset = self.asset else {
+            print("Asset not ready yet for metadata parsing")
+            return
+        }
+        let videoTracks = try await asset.loadTracks(withMediaCharacteristic: .visual)
+        if videoTracks.isEmpty {
+            print("No video track found in asset")
+            return
+        }
         
-        do {
-            // Load the tracks to access video track properties
-            let tracks = try await asset.loadTracks(withMediaType: .video)
-            
-            // Get the first video track and load its natural size
-            guard let firstVideoTrack = tracks.first else {
-                print("No video track found in asset")
-                return
+        let hdrTracks = try await asset.loadTracks(withMediaCharacteristic: .containsHDRVideo)
+        self.assetIsHDR = !hdrTracks.isEmpty
+        
+        let firstTrack = videoTracks.first!
+        let size = try await firstTrack.load(.naturalSize)
+        self.naturalSize = size
+        print("Loaded natural size: \(size)")
+        
+        self.assetPreferredTransform = try await firstTrack.load(.preferredTransform)
+
+        videoColorProperties = [:]
+        videoColorProperties[AVVideoTransferFunctionKey] = AVVideoTransferFunction_Linear
+        let formatDescriptions = try await firstTrack.load(.formatDescriptions)
+        if let primaryFormatDescription = formatDescriptions.first {
+            if let transferFunctionValue = primaryFormatDescription.extensions[.transferFunction] {
+                print("Transfer function: \(transferFunctionValue) : plist: \(transferFunctionValue.propertyListRepresentation)")
+                let transferFunction = transferFunctionValue.propertyListRepresentation as! CFString
+                if transferFunction == CMFormatDescription.Extensions.Value.TransferFunction.itu_R_2020.rawValue {
+                    // ITU_R_2020 requires special handling because there is no matching AVFoundation value for it.
+                    // All of the other relevant transfer functions are spelled identically between CM and AV.
+                    videoColorProperties[AVVideoTransferFunctionKey] = AVVideoTransferFunction_ITU_R_709_2
+                } else {
+                    videoColorProperties[AVVideoTransferFunctionKey] = transferFunction as String
+                }
+                print("Selected output transfer function: \(String(describing: videoColorProperties[AVVideoTransferFunctionKey]))")
             }
-            
-            let size = try await firstVideoTrack.load(.naturalSize)
-            self.naturalSize = size
-            print("Loaded natural size: \(size)")
-            
-        } catch {
-            print("Failed to load video track natural size: \(error)")
+            if let videoColorPrimaries = primaryFormatDescription.extensions[.colorPrimaries] {
+                print("Color primaries: \(videoColorPrimaries.propertyListRepresentation)")
+                videoColorProperties[AVVideoColorPrimariesKey] = videoColorPrimaries.propertyListRepresentation as! String
+                
+            }
+            if let videoYCbCrMatrix = primaryFormatDescription.extensions[.yCbCrMatrix] {
+                print("YCbCrMatrix: \(videoYCbCrMatrix.propertyListRepresentation)")
+                videoColorProperties[AVVideoYCbCrMatrixKey] = videoYCbCrMatrix.propertyListRepresentation as! String
+            }
+        }
+        if formatDescriptions.count > 1 {
+            print("Not handling multiple video format descriptions")
         }
     }
     
@@ -108,39 +153,40 @@ class VideoModel {
             Task { @MainActor in
                 // Update the observable properties on the main actor
                 self.currentTime = time.seconds
-                self.duration = duration
+                self.duration = self.duration
             }
         }
     }
     
     private func cancelAssetLoading() {
-        guard let asset = asset else { return }
-        
-        // Cancel all loading requests
-        asset.cancelLoading()
-        
-        player.replaceCurrentItem(with: nil)
+    }
+    
+    // Optional: Method to manually cleanup resources
+    func cleanup() {
+        print("\(self.debugDescription): Video cleanup called")
+        // Pause the player
+        player.pause()
+        // Stop accessing security scoped resource if it exists
+        if let url = _url {
+            url.stopAccessingSecurityScopedResource()
+            self._url = nil
+        }
+        if let asset = asset {
+            asset.cancelLoading()
+            self.asset = nil
+        }
         
         // Remove time observer
         if let timeObserver = timeObserver {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
-        
-        // Pause the player
-        player.pause()
-    }
-    
-    // Optional: Method to manually cleanup resources
-    func cleanup() {
-        print("\(self.debugDescription): Video cleanup called")
-        // Stop accessing security scoped resource if it exists
-        if let url = _url {
-            url.stopAccessingSecurityScopedResource()
+        if let statusObserver = statusObserver {
+            statusObserver.invalidate()
+            self.statusObserver = nil
         }
-        cancelAssetLoading()
-        _url = nil
-        asset = nil
+        player.replaceCurrentItem(with: nil)
+        videoOutput = nil
         naturalSize = .zero
     }
     
@@ -151,11 +197,14 @@ class VideoModel {
 
 enum VideoModelError: Error {
     case securityScopedResourceAccessFailed(URL)
+    case initializationFailed(String)
     
     var localizedDescription: String {
         switch self {
         case .securityScopedResourceAccessFailed(let url):
             return "Failed to start accessing security scoped resource for: \(url)"
+        case .initializationFailed(let desc):
+            return "Failed to initialize VideoModel: \(desc)"
         }
     }
 }

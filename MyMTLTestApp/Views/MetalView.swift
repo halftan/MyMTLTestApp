@@ -24,7 +24,6 @@ struct MetalView: NSViewRepresentable {
 
     func updateNSView(_ view: MTKView, context: Context) {
         delegate.configure(view: view)
-        view.delegate = delegate
     }
     
     func makeCoordinator() -> RenderDelegate {
@@ -44,7 +43,6 @@ struct MetalView: UIViewRepresentable {
 
     func updateUIView(_ view: MTKView, context: Context) {
         delegate.configure(view: view)
-        view.delegate = delegate
     }
     
     func makeCoordinator() -> RenderDelegate {

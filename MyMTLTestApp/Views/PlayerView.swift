@@ -16,7 +16,8 @@ struct PlayerView: View {
             Color.black
             if video.player.currentItem != nil {
                 VideoPlayer(player: video.player)
-                    .aspectRatio(video.naturalSize, contentMode: .fit)
+                    .aspectRatio(video.aspectRatio, contentMode: .fit)
+                    .contentMargins(20, for: .automatic)
                     .onAppear() {
                         video.player.play()
                     }
