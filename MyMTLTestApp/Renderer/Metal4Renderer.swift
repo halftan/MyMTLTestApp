@@ -2,7 +2,6 @@
 import MetalKit
 import AVFoundation
 
-let maxFramesInFlight = 3
 nonisolated let alignedModelProjectionMatrixSize = (MemoryLayout<simd_float4x4>.size + 0xFF) & -0x100
 nonisolated let edrHeadroomSize = (MemoryLayout<Float>.size)
 
@@ -256,7 +255,6 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         let renderEncoder = self.commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
         renderEncoder.label = "Main render encoder"
         
-        
         renderEncoder.pushDebugGroup("Draw video")
 
         renderEncoder.setCullMode(.back)
@@ -264,22 +262,13 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         
         renderEncoder.setRenderPipelineState(self.renderPipelineState)
         
-        #if os(visionOS)
-        let viewMappings = (0..<2).map {
-            MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: UInt32($0),
-                                              renderTargetArrayIndexOffset: UInt32($0))
-        }
-        print("Set view mapping to: \(viewMappings)")
-        renderEncoder.setVertexAmplificationCount(viewMappings)
-        #endif
-
         renderEncoder.setArgumentTable(self.vertexArgumentTable, stages: .vertex)
         renderEncoder.setArgumentTable(self.fragmentArgumentTable, stages: .fragment)
         
         // Update vertex and texture
         
         let matrix = UnsafeMutableRawPointer(vertexBuffer.contents() + vertexBufferOffset).bindMemory(to: simd_float4x4.self, capacity: 1)
-        matrix[0] = displayTransform(frameSize: CGSize(width: view.frame.width, height: view.frame.height),
+        matrix[0] = displayTransform(frameSize: CGSize(width: pixelBufferWidth, height: pixelBufferHeight),
                                      contentTransform: videoModel?.assetPreferredTransform ?? .identity,
                                      displaySize: view.drawableSize)
 

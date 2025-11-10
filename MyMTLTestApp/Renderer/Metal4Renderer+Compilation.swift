@@ -18,7 +18,7 @@ extension Metal4Renderer {
         descriptor.colorAttachments[0].pixelFormat = self.colorPixelFormat
         descriptor.vertexFunctionDescriptor = self.makeVertexShaderDescriptor()
         descriptor.fragmentFunctionDescriptor = self.makeFragmentShaderDescriptor(for: transferFunction)
-        descriptor.maxVertexAmplificationCount = 2
+//        descriptor.maxVertexAmplificationCount = 2
         let compilerTasksOpt = self.configureCompilerTaskOptions()
         
         do {

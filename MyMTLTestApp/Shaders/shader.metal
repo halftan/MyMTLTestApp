@@ -15,7 +15,6 @@ struct VertexOut {
 
 [[vertex]]
 VertexOut vertex_main(uint vertexID [[vertex_id]],
-                      uint ampId [[amplification_id]],
                       constant float4x4 &modelProjectionMatrix [[buffer(0)]])
 {
     float2 vertices[] = {
@@ -42,12 +41,21 @@ float2 texture_mapping(float2 texCoords, uint ampId) {
 }
 
 [[fragment]]
+half4 fragment_linear_sbs(VertexOut in [[stage_in]],
+                          texture2d<half> frameTexture [[texture(0)]],
+                          constant int &viewID [[buffer(0)]])
+{
+    constexpr sampler bilinearSampler(address::clamp_to_edge, filter::linear, mip_filter::none);
+    half4 color = frameTexture.sample(bilinearSampler, float2(in.texCoords.x * 0.5 + viewID * 0.5, 1.0 - in.texCoords.y));
+    return color;
+}
+
+[[fragment]]
 half4 fragment_linear(VertexOut in [[stage_in]],
-                      uint ampId [[amplification_id]],
                       texture2d<half> frameTexture [[texture(0)]])
 {
     constexpr sampler bilinearSampler(address::clamp_to_edge, filter::linear, mip_filter::none);
-    half4 color = frameTexture.sample(bilinearSampler, texture_mapping(in.texCoords, ampId));
+    half4 color = frameTexture.sample(bilinearSampler, in.texCoords);
     return color;
 }
 

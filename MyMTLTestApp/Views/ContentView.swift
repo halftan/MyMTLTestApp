@@ -15,6 +15,9 @@ struct ContentView: View {
     @State private var videoModel: VideoModel
     @State private var renderer: Metal4Renderer
     
+    @Environment(AppModel.self) private var appModel
+    @Environment(\.openWindow) private var openWindow
+    
     init() {
         let videoModel = VideoModel()
         self.videoModel = videoModel
@@ -76,7 +79,7 @@ struct ContentView: View {
                     
                     #if os(visionOS)
                     Button("Open VR Player in RealityView") {
-                        
+                        openWindow(id: appModel.realityWindowID)
                     }
                     .font(.body)
                     #endif
