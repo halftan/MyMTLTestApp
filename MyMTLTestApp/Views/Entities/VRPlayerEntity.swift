@@ -6,6 +6,7 @@
 //
 import SwiftUI
 import AVFoundation
+import CoreVideo
 import RealityKit
 import RealityKit_assets
 
@@ -76,6 +77,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
 
     var videoModel: VideoModel?
     var mtlTextureCache: CVMetalTextureCache?
+    var cvMetalTexture: CVMetalTexture!
 
     func frameTexture() -> (any MTLTexture)? {
         return texture
@@ -231,11 +233,23 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 print("Error when calling CVMetalTextureCacheCreateTextureFromImage: \(result)")
                 return
             }
-            texture = CVMetalTextureGetTexture(cvTexture!)
+            cvMetalTexture = nil
+            texture = nil
+
+            cvMetalTexture = cvTexture
+            texture = CVMetalTextureGetTexture(cvMetalTexture)
         }
     }
 
+    var paused = false
+
+    @MainActor
     func update() {
+        if paused {
+            texture = nil
+            cvMetalTexture = nil
+            return
+        }
         autoreleasepool {
             renderer.draw(provider: self)
         }

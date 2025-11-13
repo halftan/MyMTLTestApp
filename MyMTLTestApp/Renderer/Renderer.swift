@@ -131,10 +131,11 @@ class Renderer: NSObject {
             renderEncoder.setRenderPipelineState(pipelineStates.simpleTextureSampling)
             // Calculate new display Transform and set vertex buffer
 
-            guard let texture = textureProvider.frameTexture() else {
+            weak var texture = textureProvider.frameTexture()
+            if texture == nil {
                 fatalError("failed to fetch texture for next frame")
             }
-            let desiredSize = CGSize(width: texture.width, height: texture.height)
+            let desiredSize = CGSize(width: texture!.width, height: texture!.height)
             var modelProjectionMatrix = self.displayTransform(
                 frameSize: desiredSize,
                 contentTransform: .identity,

@@ -13,6 +13,7 @@ struct OpenVRImageButton: View {
     @State private var showFileImporter = false
 
     @Environment(AppModel.self) private var appModel
+    @Environment(Settings.self) private var settings
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
@@ -28,12 +29,14 @@ struct OpenVRImageButton: View {
                 Task { @MainActor in
                     switch appModel.immersiveSpaceState {
                     case .open:
+                        settings.paused = true
                         appModel.immersiveSpaceState = .inTransition
                         await dismissImmersiveSpace()
                     case .closed:
                         appModel.immersiveSpaceState = .inTransition
                         switch await openImmersiveSpace(id: appModel.immersiveViewID) {
                         case .opened:
+                            settings.paused = false
                             break
 
                         case .userCancelled, .error:

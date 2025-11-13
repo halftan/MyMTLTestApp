@@ -30,4 +30,8 @@ class AppModel {
     var mainWindowState = MainWindowState.open
 
     var videoModel = VideoModel()
+
+    func cleanupVideoModel() {
+        videoModel.cleanup()
+    }
 }

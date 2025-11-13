@@ -32,15 +32,19 @@ struct SettingsView: View {
 
             HStack {
                 Button("", systemImage: "stop") {
+                    settings.paused = true
+                    appModel.videoModel.player.pause()
                     Task {
+                        appModel.videoModel.cleanup()
                         await dismissImmersiveSpace()
                     }
-                    appModel.videoModel.cleanup()
                 }
                 Button("", systemImage: "play") {
+                    settings.paused = false
                     appModel.videoModel.player.play()
                 }
                 Button("", systemImage: "pause") {
+                    settings.paused = true
                     appModel.videoModel.player.pause()
                 }
             }

@@ -73,6 +73,9 @@ struct ImmersiveVRView: View {
             .onChange(of: settings.stereoOn, initial: true) {
                 playerEntity.setStereo(settings.stereoOn)
             }
+            .onChange(of: settings.paused, initial: true) {
+                playerEntity.paused = settings.paused
+            }
             .onDisappear {
                 print("Disappeared")
                 print("Cleaning up resources")

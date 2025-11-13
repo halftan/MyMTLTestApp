@@ -31,4 +31,6 @@ class Settings {
     var stereoType: StereoType = .defaultType
 
     var stereoOn: Bool = true
+
+    var paused: Bool = false
 }
