@@ -46,7 +46,7 @@ half4 fragment_linear_sbs(VertexOut in [[stage_in]],
                           constant int &viewID [[buffer(0)]])
 {
     constexpr sampler bilinearSampler(address::clamp_to_edge, filter::linear, mip_filter::none);
-    half4 color = frameTexture.sample(bilinearSampler, float2(in.texCoords.x * 0.5 + viewID * 0.5, 1.0 - in.texCoords.y));
+    half4 color = frameTexture.sample(bilinearSampler, float2(in.texCoords.x * 0.5 + viewID * 0.5, in.texCoords.y));
     return color;
 }
 

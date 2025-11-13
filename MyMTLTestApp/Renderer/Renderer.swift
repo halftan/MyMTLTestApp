@@ -18,7 +18,7 @@ class Renderer: NSObject {
     let device: MTLDevice
 
     let commandQueue: MTLCommandQueue!
-    
+
     let endFrameEvent: MTLSharedEvent!
 
     // Called at the start of every frame.
@@ -27,35 +27,34 @@ class Renderer: NSObject {
     var pipelineStates: PipelineStates
     var depthStencilStates: DepthStencilStates
     var committedFrameNumber: UInt64 = 0
-    
+
     // If provided, this is called at the end of every frame, and should return a drawable that will be presented.
     var getCurrentDrawable: (() -> CAMetalDrawable?)?
-    
+
     // If provided, this is called whenever the drawable size changes.
     var drawableSizeWillChange: ((MTLDevice, CGSize, MTLStorageMode) -> Void)?
-    
+
     var size: CGSize = .init(width: 100, height: 100)
-    
-    // TODO: change this to an actual scene data provider
-    var texture: MTLTexture
+
+    var textureProvider: TextureProviding
 
     let defaultPassDescriptor: MTLRenderPassDescriptor = {
         let descriptor = MTLRenderPassDescriptor()
         return descriptor
     }()
-    
+
     init(device: MTLDevice,
          renderDestination: RenderDestination,
-         texture: MTLTexture,
+         textureProvider: TextureProviding,
          didBeginFrame: @escaping () -> Void) {
-        
+
         self.commandQueue = device.makeCommandQueue()!
         self.didBeginFrame = didBeginFrame
         self.pipelineStates = .init(device: device, renderDestination: renderDestination)
         self.depthStencilStates = .init(device: device)
         self.device = device
-        self.texture = texture
-        
+        self.textureProvider = textureProvider
+
         self.endFrameEvent = device.makeSharedEvent()
         // Start the signal value + committed frames index at
         // max buffers in flight to avoid negative values
@@ -65,7 +64,7 @@ class Renderer: NSObject {
         print("Renderer using device: \(device.name)")
         super.init()
     }
-    
+
     func beginFrame() -> MTLCommandBuffer {
         // TODO: is waiting for GPU event needed here?
 //        commandQueue.waitForEvent(endFrameEvent, value: committedFrameNumber - UInt64(maxFramesInFlight))
@@ -76,24 +75,24 @@ class Renderer: NSObject {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             fatalError("Failed to create a new command buffer")
         }
-        
+
         didBeginFrame()
-        
+
         return commandBuffer
     }
-    
+
     func beginDrawableCommands() -> MTLCommandBuffer {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             fatalError("Failed to make command buffer from command queue")
         }
-        
+
         // Add a completion handler that signals `inFlightSemaphore`
         // when Metal and the GPU has fully finished processing the commands encoded for this frame.
         // This indicates when the dynamic buffers, written this frame, will no longer be needed by Metal and the GPU.
         //        commandBuffer.addCompletedHandler { [weak self] _ in
         //            self?.inFlightSemaphore.signal()
         //        }
-        
+
         return commandBuffer
     }
 
@@ -106,7 +105,7 @@ class Renderer: NSObject {
         committedFrameNumber += 1
 //        endFrameEvent.signaledValue = committedFrameNumber
     }
-    
+
     func encodePass(into commandBuffer: MTLCommandBuffer,
                     using descriptor: MTLRenderPassDescriptor,
                     label: String,
@@ -118,7 +117,7 @@ class Renderer: NSObject {
         encodingBlock(renderEncoder)
         renderEncoder.endEncoding()
     }
-    
+
     func encodeStage(using renderEncoder: MTLRenderCommandEncoder,
                      label: String,
                      _ encodingBlock: () -> Void) {
@@ -126,20 +125,24 @@ class Renderer: NSObject {
         encodingBlock()
         renderEncoder.popDebugGroup()
     }
-    
+
     func encodeSampleStage(using renderEncoder: MTLRenderCommandEncoder) {
         encodeStage(using: renderEncoder, label: "Sample stage") {
             renderEncoder.setRenderPipelineState(pipelineStates.simpleTextureSampling)
             // Calculate new display Transform and set vertex buffer
-            
+
+            guard let texture = textureProvider.frameTexture() else {
+                fatalError("failed to fetch texture for next frame")
+            }
+            let desiredSize = CGSize(width: texture.width, height: texture.height)
             var modelProjectionMatrix = self.displayTransform(
-                frameSize: CGSize(width: texture.width / 2, height: texture.height),
+                frameSize: desiredSize,
                 contentTransform: .identity,
-                displaySize: self.size
+                displaySize: desiredSize
             )
             renderEncoder.setVertexBytes(&modelProjectionMatrix, length: MemoryLayout<float4x4>.stride, index: 0)
             renderEncoder.setFragmentTexture(texture, index: 0)
-            
+
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
     }
@@ -147,29 +150,33 @@ class Renderer: NSObject {
 
 @objc protocol DrawableProviding {
     var viewCount: Int { get }
-    
+
     // TODO: omitted for now
 //    func viewMatrix(viewIndex: Int) -> simd_float4x4
 //    func projectionMatrix(viewIndex: Int) -> simd_float4x4
-    
+
     func colorTexture(viewIndex: Int, for commandBuffer: MTLCommandBuffer) -> MTLTexture?
     func depthStencilTexture(viewIndex: Int, for commandBuffer: MTLCommandBuffer) -> MTLTexture?
+}
+
+protocol TextureProviding {
+    func frameTexture() -> MTLTexture?
 }
 
 extension Renderer {
     func draw(provider: DrawableProviding) {
         var commandBuffer = beginFrame()
         commandBuffer.label = "Shadow commands"
-        
+
         // TODO: draw shadows
-        
+
         commandBuffer.commit()
-        
+
         for viewIndex in 0..<provider.viewCount {
             // TODO: scene/texture update
             commandBuffer = beginDrawableCommands()
             commandBuffer.label = "GBuffer & Lighting Commands"
-            
+
             if let color = provider.colorTexture(viewIndex: viewIndex, for: commandBuffer),
                let depthStencil = provider.depthStencilTexture(viewIndex: viewIndex, for: commandBuffer) {
 
@@ -177,23 +184,22 @@ extension Renderer {
                 defaultPassDescriptor.colorAttachments[0].clearColor = .init(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
 //                defaultPassDescriptor.depthAttachment.texture = depthStencil
 //                defaultPassDescriptor.stencilAttachment.texture = depthStencil
-                
+
                 encodePass(into: commandBuffer, using: defaultPassDescriptor, label: "Default render pass") { renderEncoder in
                     var viewIndex = viewIndex
                     renderEncoder.setFragmentBytes(&viewIndex, length: MemoryLayout<Int>.size, index: 0)
                     encodeSampleStage(using: renderEncoder)
                 }
             }
-            
+
             endFrame(commandBuffer)
         }
     }
-    
+
     func drawableSizeWillChange(size: CGSize) {
         let storageMode = MTLStorageMode.private
 
         self.size = size
-        print("Frame size set to \(size.debugDescription)")
         drawableSizeWillChange?(device, size, storageMode)
     }
 }
@@ -203,8 +209,6 @@ extension Renderer {
                                   contentTransform: CGAffineTransform,
                                   displaySize: CGSize) -> simd_float4x4
     {
-        print("Natural frame size: \(frameSize)")
-        print("Bound size: \(displaySize)")
         // The natural frame of a video track is the bounding rect of the image containing a frame's contents.
         let naturalFrame = CGRectMake(0, 0, frameSize.width, frameSize.height)
         // The video frame is the bounding rect of a frame after transformation by the track's preferred transform.
@@ -236,20 +240,17 @@ extension Renderer {
 
 extension Renderer {
     static func loadTexture(device: MTLDevice,
-                            textureName: String) throws -> MTLTexture {
+                            resourceFile: URL) async throws -> MTLTexture {
         /// Load texture data with optimal parameters for sampling
-        
+
         let textureLoader = MTKTextureLoader(device: device)
-        
+
         let textureLoaderOptions = [
             MTKTextureLoader.Option.textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
             MTKTextureLoader.Option.textureStorageMode: NSNumber(value: MTLStorageMode.`private`.rawValue)
         ]
-        
-        return try textureLoader.newTexture(name: textureName,
-                                            scaleFactor: 1.0,
-                                            bundle: nil,
-                                            options: textureLoaderOptions)
+
+        return try await textureLoader.newTexture(URL: resourceFile, options: textureLoaderOptions)
     }
 }
 

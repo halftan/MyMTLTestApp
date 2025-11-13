@@ -11,7 +11,7 @@ enum Metal4RendererError: Error {
     case renderPassDescriptorNotAvailable
     case commandQueueCreationFailed
     case initializationFailed(String)
-    
+
     var localizedDescription: String {
         switch self {
         case .initializationFailed(let desc):
@@ -35,16 +35,16 @@ enum TonemappingMode {
 
 class Metal4Renderer: NSObject, @MainActor RenderDelegate {
     let device: MTLDevice
-    
+
     let commandQueue: MTL4CommandQueue
-    
+
     let commandBuffer: MTL4CommandBuffer
-    
+
     let endFrameEvent: MTLSharedEvent
-    
+
     let vertexArgumentTable: MTL4ArgumentTable
     let fragmentArgumentTable: MTL4ArgumentTable
-    
+
     let vertexBuffer: MTLBuffer
     let edrHeadroomBuffer: MTLBuffer
 
@@ -56,10 +56,10 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
     var committedFrameNumber: UInt64 = 0
     var viewportSize: CGSize = .zero
     var colorPixelFormat: MTLPixelFormat = .invalid
-    
+
     var videoModel: VideoModel?
     var mtlTextureCache: CVMetalTextureCache?
-    
+
     var vertexBufferIndex = 0
     var vertexBufferOffset = 0
     var edrHeadroomBufferIndex = 0
@@ -70,7 +70,7 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
 
     init(video: VideoModel) {
         self.colorPixelFormat = .rgba16Float
-        
+
         self.device = MTLCreateSystemDefaultDevice()!
         print("Selected Metal device: \(device.name)")
         self.videoModel = video
@@ -78,11 +78,11 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         self.commandQueue = device.makeMTL4CommandQueue()!
         self.commandBuffer = device.makeCommandBuffer()!
         self.library = device.makeDefaultLibrary()
-        
+
         let vertexBufferSize = alignedModelProjectionMatrixSize * maxFramesInFlight
         self.vertexBuffer = device.makeBuffer(length: vertexBufferSize, options: [.storageModeShared])!
         self.vertexBuffer.label = "Main vertex buffer"
-        
+
         let edrHeadroomBufferSize = edrHeadroomSize * maxFramesInFlight
         self.edrHeadroomBuffer = device.makeBuffer(length: edrHeadroomBufferSize, options: [.storageModeShared])!
         self.edrHeadroomBuffer.label = "EDR headroom buffer"
@@ -92,7 +92,7 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         // max buffers in flight to avoid negative values
         self.endFrameEvent.signaledValue = UInt64(maxFramesInFlight)
         committedFrameNumber = UInt64(maxFramesInFlight)
-        
+
         let argTableDesc = MTL4ArgumentTableDescriptor()
         argTableDesc.maxBufferBindCount = 1
         self.vertexArgumentTable = try! device.makeArgumentTable(descriptor: argTableDesc)
@@ -101,11 +101,11 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         self.fragmentArgumentTable = try! device.makeArgumentTable(descriptor: argTableDesc)
 
         super.init()
-        
+
         self.mtlTextureCache = try! makeMetalTextureCache()
         self.commandAllocators = (0...maxFramesInFlight).map({_ in self.device.makeCommandAllocator()!})
     }
-    
+
     private func makeMetalTextureCache() throws -> CVMetalTextureCache? {
         var mtlTextureCache: CVMetalTextureCache?
         let result = CVMetalTextureCacheCreate(kCFAllocatorDefault,
@@ -121,10 +121,10 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         default:
             throw Metal4RendererError.initializationFailed("Failed to create CVMetalTextureCache: CVReturn:\(result)")
         }
-        
+
         return mtlTextureCache
     }
-    
+
     func configure(view: MTKView) {
         print("Configure called")
         self.view = view
@@ -133,18 +133,18 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         view.clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
         view.framebufferOnly = false
     }
-    
+
     func prepareRender(for transferFunction: String) async {
         guard let view = view else { return }
         guard let metalLayer = view.layer as? CAMetalLayer else { return }
-        
+
         /// not needed as we've set these properties on metalLayer
 //        view.colorspace = CGColorSpace(name: CGColorSpace.itur_2100_HLG)
 //        view.colorPixelFormat = self.colorPixelFormat
 
         reportMaxEDRHeadroom()
         setInitialEDRMetadata()
-        
+
         metalLayer.wantsExtendedDynamicRangeContent = true
         switch transferFunction {
         case AVVideoTransferFunction_ITU_R_2100_HLG:
@@ -159,43 +159,43 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
             metalLayer.colorspace = CGColorSpace(name: CGColorSpace.extendedDisplayP3)
         }
         metalLayer.pixelFormat = self.colorPixelFormat
-        
+
         self.renderPipelineState = self.compileRenderPipeline(for: transferFunction)
     }
-    
+
     /// This method is called whenever the view's size changes.
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         // You can use this to respond to window resizes, for example,
         // by recreating size-dependent resources.
         self.viewportSize = view.drawableSize
     }
-    
+
     private func updateDynamicBufferState(frameIndex: UInt64) {
-        
+
         self.vertexBufferIndex = (vertexBufferIndex + 1) % maxFramesInFlight
         self.vertexBufferOffset = alignedModelProjectionMatrixSize * vertexBufferIndex
-        
+
         self.edrHeadroomBufferIndex = (edrHeadroomBufferIndex + 1) % maxFramesInFlight
         self.vertexBufferOffset = edrHeadroomSize * edrHeadroomBufferIndex
     }
-    
+
     /// This method is called for every frame that needs to be rendered.
     func draw(in view: MTKView) {
         autoreleasepool {
             render(in: view)
         }
     }
-    
+
     func render(in view: MTKView) {
         let frameIndex = Int(committedFrameNumber % UInt64(maxFramesInFlight))
         let frameLabel = "Frame: \(committedFrameNumber)"
-        
+
         guard self.endFrameEvent.wait(untilSignaledValue: committedFrameNumber - UInt64(maxFramesInFlight), timeoutMS: 100) else {
             print("Timeout waiting for buffered frame to draw!")
             return
         }
         CVMetalTextureCacheFlush(self.mtlTextureCache!, 0)
-        
+
         guard let videoOutput = videoModel?.videoOutput else {
             print("video output not set!")
             return
@@ -210,7 +210,7 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         }
         let pixelBufferWidth = CVPixelBufferGetWidth(pixelBuffer)
         let pixelBufferHeight = CVPixelBufferGetHeight(pixelBuffer)
-        
+
         var cvTexture: CVMetalTexture?
         let result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
                                                                self.mtlTextureCache!,
@@ -235,12 +235,12 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
             print("⚠️ [Frame \(committedFrameNumber)] No drawable available - view may not be ready or in background")
             return
         }
-        
+
         guard let renderPassDescriptor = view.currentMTL4RenderPassDescriptor else {
             print("⚠️ [Frame \(committedFrameNumber)] Render pass descriptor not available - MTKView configuration may be incomplete")
             return
         }
-        
+
         guard let commandQueue = device.makeMTL4CommandQueue() else {
             print("❌ [Frame \(committedFrameNumber)] Failed to create MTL4CommandQueue - device may be unavailable")
             return
@@ -251,29 +251,29 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
         frameAllocator.reset()
         self.commandBuffer.beginCommandBuffer(allocator: frameAllocator)
         commandBuffer.label = "Main command buffer"
-        
+
         let renderEncoder = self.commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
         renderEncoder.label = "Main render encoder"
-        
+
         renderEncoder.pushDebugGroup("Draw video")
 
         renderEncoder.setCullMode(.back)
         renderEncoder.setFrontFacing(.counterClockwise)
-        
+
         renderEncoder.setRenderPipelineState(self.renderPipelineState)
-        
+
         renderEncoder.setArgumentTable(self.vertexArgumentTable, stages: .vertex)
         renderEncoder.setArgumentTable(self.fragmentArgumentTable, stages: .fragment)
-        
+
         // Update vertex and texture
-        
+
         let matrix = UnsafeMutableRawPointer(vertexBuffer.contents() + vertexBufferOffset).bindMemory(to: simd_float4x4.self, capacity: 1)
         matrix[0] = displayTransform(frameSize: CGSize(width: pixelBufferWidth, height: pixelBufferHeight),
                                      contentTransform: videoModel?.assetPreferredTransform ?? .identity,
                                      displaySize: view.drawableSize)
 
         self.vertexArgumentTable.setAddress(vertexBuffer.gpuAddress + UInt64(vertexBufferOffset), index: 0)
-        
+
         if tonemappingMode == .auto {
             pollCurrentEDRHeadroom()
             let edrHeadroomPointer = UnsafeMutableRawPointer(edrHeadroomBuffer.contents() + edrHeadroomBufferOffset).bindMemory(to: Float.self, capacity: 1)
@@ -284,23 +284,23 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
 
         // Draw
         renderEncoder.drawPrimitives(primitiveType: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        
+
         // Finalize the render pass.
         renderEncoder.endEncoding()
-        
+
         renderEncoder.popDebugGroup()
 
         commandBuffer.endCommandBuffer()
-        
+
         commandQueue.waitForDrawable(drawable)
         commandQueue.commit([commandBuffer])
         commandQueue.signalDrawable(drawable)
         drawable.present()
-        
+
         committedFrameNumber += 1
         commandQueue.signalEvent(self.endFrameEvent, value: committedFrameNumber)
     }
-    
+
     private func displayTransform(frameSize: CGSize,
                                   contentTransform: CGAffineTransform,
                                   displaySize: CGSize) -> simd_float4x4
