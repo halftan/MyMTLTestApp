@@ -5,17 +5,15 @@
 //  Created by Andy Zhang on 2025/11/7.
 //
 
-import SwiftUI
 import AVKit
 import Metal
 import MetalKit
+import SwiftUI
 import UniformTypeIdentifiers
 
 extension CGFloat {
     static var defaultAspectRatio: Self {
-        get {
-            return 16.0 / 9.0
-        }
+        return 16.0 / 9.0
     }
 }
 
@@ -38,12 +36,10 @@ class VideoModel {
     // Video track properties
     private(set) var naturalSize: CGSize = .zero
     var aspectRatio: CGFloat {
-        get {
-            if naturalSize != .zero {
-                return naturalSize.width / naturalSize.height
-            }
-            return .defaultAspectRatio
+        if naturalSize != .zero {
+            return naturalSize.width / naturalSize.height
         }
+        return .defaultAspectRatio
     }
 
     private var asset: AVAsset?
@@ -52,9 +48,7 @@ class VideoModel {
     var videoColorProperties: [String: any Sendable] = [:]
 
     var transferFunction: String {
-        get {
-            return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
-        }
+        return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
     }
 
     let player: AVPlayer = AVPlayer()
@@ -62,7 +56,7 @@ class VideoModel {
     private var timeObserver: Any?
     var statusObserver: NSKeyValueObservation?
     var videoOutput: AVPlayerItemVideoOutput?
-//    var displayLink: CADisplayLink?
+    //    var displayLink: CADisplayLink?
 
     init() {
         print("Initializing video model")
@@ -140,25 +134,34 @@ class VideoModel {
         let formatDescriptions = try await firstTrack.load(.formatDescriptions)
         if let primaryFormatDescription = formatDescriptions.first {
             if let transferFunctionValue = primaryFormatDescription.extensions[.transferFunction] {
-                print("Transfer function: \(transferFunctionValue) : plist: \(transferFunctionValue.propertyListRepresentation)")
+                print(
+                    "Transfer function: \(transferFunctionValue) : plist: \(transferFunctionValue.propertyListRepresentation)"
+                )
                 let transferFunction = transferFunctionValue.propertyListRepresentation as! CFString
-                if transferFunction == CMFormatDescription.Extensions.Value.TransferFunction.itu_R_2020.rawValue {
+                if transferFunction
+                    == CMFormatDescription.Extensions.Value.TransferFunction.itu_R_2020.rawValue
+                {
                     // ITU_R_2020 requires special handling because there is no matching AVFoundation value for it.
                     // All of the other relevant transfer functions are spelled identically between CM and AV.
-                    videoColorProperties[AVVideoTransferFunctionKey] = AVVideoTransferFunction_ITU_R_709_2
+                    videoColorProperties[AVVideoTransferFunctionKey] =
+                        AVVideoTransferFunction_ITU_R_709_2
                 } else {
                     videoColorProperties[AVVideoTransferFunctionKey] = transferFunction as String
                 }
-                print("Selected output transfer function: \(String(describing: videoColorProperties[AVVideoTransferFunctionKey]))")
+                print(
+                    "Selected output transfer function: \(String(describing: videoColorProperties[AVVideoTransferFunctionKey]))"
+                )
             }
             if let videoColorPrimaries = primaryFormatDescription.extensions[.colorPrimaries] {
                 print("Color primaries: \(videoColorPrimaries.propertyListRepresentation)")
-                videoColorProperties[AVVideoColorPrimariesKey] = videoColorPrimaries.propertyListRepresentation as! String
+                videoColorProperties[AVVideoColorPrimariesKey] =
+                    videoColorPrimaries.propertyListRepresentation as! String
 
             }
             if let videoYCbCrMatrix = primaryFormatDescription.extensions[.yCbCrMatrix] {
                 print("YCbCrMatrix: \(videoYCbCrMatrix.propertyListRepresentation)")
-                videoColorProperties[AVVideoYCbCrMatrixKey] = videoYCbCrMatrix.propertyListRepresentation as! String
+                videoColorProperties[AVVideoYCbCrMatrixKey] =
+                    videoYCbCrMatrix.propertyListRepresentation as! String
             }
         }
         if formatDescriptions.count > 1 {
@@ -168,9 +171,14 @@ class VideoModel {
 
     private func addPeriodicTimeObserver() {
         let interval = CMTime(value: 1, timescale: 10)
-        self.timeObserver = self.player.addPeriodicTimeObserver(forInterval: interval,
-                                                                queue: .main) { [weak self] time in
-            guard let self else { print("timeObserver invalidated, self is nil"); return }
+        self.timeObserver = self.player.addPeriodicTimeObserver(
+            forInterval: interval,
+            queue: .main
+        ) { [weak self] time in
+            guard let self else {
+                print("timeObserver invalidated, self is nil")
+                return
+            }
             Task { @MainActor in
                 // Update the observable properties on the main actor
                 self.currentTime = time.seconds
@@ -181,61 +189,61 @@ class VideoModel {
 
     // Optional: Method to manually cleanup resources
     func cleanup() {
-    print("\(self.debugDescription): Video cleanup called")
-    
-    // Pause the player
-    player.pause()
-    
-    // Clean up player item and its associated resources
-    if let playerItem = player.currentItem {
-        // Remove video output from player item before niling it
-        if let videoOutput = videoOutput {
-            playerItem.remove(videoOutput)
+        print("\(self.debugDescription): Video cleanup called")
+
+        // Pause the player
+        player.pause()
+
+        // Clean up player item and its associated resources
+        if let playerItem = player.currentItem {
+            // Remove video output from player item before niling it
+            if let videoOutput = videoOutput {
+                playerItem.remove(videoOutput)
+            }
         }
+
+        // Stop accessing security scoped resource if it exists
+        if let url = _url {
+            url.stopAccessingSecurityScopedResource()
+            self._url = nil
+        }
+
+        // Cancel asset loading
+        if let asset = asset {
+            asset.cancelLoading()
+            self.asset = nil
+        }
+
+        contentType = nil
+
+        // Remove time observer
+        if let timeObserver = timeObserver {
+            player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+
+        // Invalidate status observer
+        if let statusObserver = statusObserver {
+            statusObserver.invalidate()
+            self.statusObserver = nil
+        }
+
+        // Clear player item
+        player.replaceCurrentItem(with: nil)
+
+        // Clear video output
+        videoOutput = nil
+
+        // Reset properties
+        naturalSize = .zero
+        currentTime = 0.0
+        duration = 0.0
+        assetIsHDR = false
+        assetPreferredTransform = .identity
+        videoColorProperties = [:]
+
+        print("\(self.debugDescription): Video cleanup completed")
     }
-    
-    // Stop accessing security scoped resource if it exists
-    if let url = _url {
-        url.stopAccessingSecurityScopedResource()
-        self._url = nil
-    }
-    
-    // Cancel asset loading
-    if let asset = asset {
-        asset.cancelLoading()
-        self.asset = nil
-    }
-    
-    contentType = nil
-    
-    // Remove time observer
-    if let timeObserver = timeObserver {
-        player.removeTimeObserver(timeObserver)
-        self.timeObserver = nil
-    }
-    
-    // Invalidate status observer
-    if let statusObserver = statusObserver {
-        statusObserver.invalidate()
-        self.statusObserver = nil
-    }
-    
-    // Clear player item
-    player.replaceCurrentItem(with: nil)
-    
-    // Clear video output
-    videoOutput = nil
-    
-    // Reset properties
-    naturalSize = .zero
-    currentTime = 0.0
-    duration = 0.0
-    assetIsHDR = false
-    assetPreferredTransform = .identity
-    videoColorProperties = [:]
-    
-    print("\(self.debugDescription): Video cleanup completed")
-}
 
     var debugDescription: String {
         return "VideoModel holding url: \(self.url?.absoluteString ?? "None")"
