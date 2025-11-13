@@ -199,7 +199,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
 
             // Extract next frame if item is video
             // maybe useful?
-            CVMetalTextureCacheFlush(self.mtlTextureCache!, 0)
+            // CVMetalTextureCacheFlush(self.mtlTextureCache!, 0)
 
             guard let videoOutput = videoModel?.videoOutput else {
                 print("video output not set!")
@@ -252,6 +252,15 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
         }
         autoreleasepool {
             renderer.draw(provider: self)
+        }
+        guard let isVideo = videoModel?.isVideo else {
+            // videoModel is nil, could be something wrong. Pause rendering
+            paused = true
+            return
+        }
+        if !isVideo {
+            // image needs only 1 render pass
+            paused = true
         }
     }
 
