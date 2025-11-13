@@ -16,6 +16,7 @@ struct MyMTLTestApp: App {
         WindowGroup(id: appModel.mainWindowID) {
             ContentView()
                 .environment(appModel)
+                .environment(settings)
             SettingsView()
                 .environment(appModel)
                 .environment(settings)
