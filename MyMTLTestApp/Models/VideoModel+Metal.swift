@@ -18,13 +18,13 @@ extension VideoModel {
             AVVideoColorPropertiesKey: videoColorProperties,
             kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_64RGBAHalf)
         ]
-        
+
         let videoPlayerItemOutput = AVPlayerItemVideoOutput(outputSettings: outputVideoSettings)
         return videoPlayerItemOutput
     }
-    
+
     func prepareForRender() async throws {
-        guard let playerItem = self.player.currentItem else {
+        guard let playerItem = self.player?.currentItem else {
             throw VideoModelError.initializationFailed("trying to setup video output before playerItem is set")
         }
         self.videoOutput = makeVideoOutput()
@@ -52,7 +52,7 @@ extension VideoModel {
 //            }
 //        })
     }
-    
+
 //    func extractFrame(with mtlTextureCache: CVMetalTextureCache) -> (any MTLTexture)? {
 //        guard let videoOutput = videoOutput else {
 //            print("video output not set!")
@@ -63,7 +63,7 @@ extension VideoModel {
 //            if let buffer = videoOutput.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) {
 //                let width = CVPixelBufferGetWidth(buffer)
 //                let height = CVPixelBufferGetHeight(buffer)
-//                
+//
 //                var cvTexture: CVMetalTexture?
 //                let result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
 //                                                          mtlTextureCache,
@@ -84,7 +84,7 @@ extension VideoModel {
 //        }
 //        return nil
 //    }
-    
+
 //    @objc
 //    func displayLinkCopyPixelBuffers(link: CADisplayLink) {
 //        guard let videoOutput = videoOutput else {
@@ -96,7 +96,7 @@ extension VideoModel {
 //            if let buffer = videoOutput.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) {
 //                let width = CVPixelBufferGetWidth(buffer)
 //                let height = CVPixelBufferGetHeight(buffer)
-//                
+//
 //                var cvTexture: CVMetalTexture?
 //                let result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
 //                                                          self.mtlTextureCache!,

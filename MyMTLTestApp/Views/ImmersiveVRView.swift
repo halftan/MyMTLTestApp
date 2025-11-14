@@ -12,13 +12,14 @@ import UniformTypeIdentifiers
 #if os(visionOS)
 struct ImmersiveVRView: View {
 
-    @State var root = Entity()
-    @State var playerEntity = VRPlayerEntity()
-
     @Environment(AppModel.self) private var appModel
     @Environment(Settings.self) private var settings
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
+
+    private var root = Entity()
+    private var playerEntity = VRPlayerEntity()
+    private var anchor = AnchorEntity(.head, trackingMode: .once)
 
     var body: some View {
         GeometryReader3D { proxy in
@@ -40,8 +41,6 @@ struct ImmersiveVRView: View {
                 // let mesh = try! await MeshResource(from: myMesh.mesh)
                 // let mat = try! await UnlitMaterial(texture: TextureResource(contentsOf: textureFile))
                 // let m = ModelEntity(mesh: mesh, materials: [mat])
-
-                let anchor = AnchorEntity(.head, trackingMode: .once)
 
                 // root.components.set(InputTargetComponent())
                 // var collision = CollisionComponent(shapes: [.generateSphere(radius: 100)])
@@ -68,7 +67,14 @@ struct ImmersiveVRView: View {
                 // playerEntity.setTransformMatrix(.init(proxy.transform(in: .global)!), relativeTo: root)
                 // let newFrame = content.convert(proxy.frame(in: .global), from: .global, to: .scene)
                 // playerEntity.setScale([newFrame.extents.x, newFrame.extents.y, newFrame.extents.z], relativeTo: root)
-                root.transform.translation = .init(x: settings.translateX, y: settings.translateY, z: settings.translateZ)
+                let baseTranslation = anchor.transform.translation
+                print("Anchor translation: \(baseTranslation)")
+                anchor.reanchor(.head, preservingWorldTransform: true)
+                root.transform.translation = .init(
+                    x: baseTranslation.x + settings.translateX,
+                    y: baseTranslation.y + settings.translateY,
+                    z: baseTranslation.z + settings.translateZ
+                )
             }
             .onChange(of: settings.stereoOn, initial: true) {
                 playerEntity.setStereo(settings.stereoOn)

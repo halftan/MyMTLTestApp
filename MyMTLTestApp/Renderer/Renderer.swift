@@ -36,7 +36,7 @@ class Renderer: NSObject {
 
     var size: CGSize = .init(width: 100, height: 100)
 
-    var textureProvider: TextureProviding
+    weak var textureProvider: TextureProviding?
 
     let defaultPassDescriptor: MTLRenderPassDescriptor = {
         let descriptor = MTLRenderPassDescriptor()
@@ -131,9 +131,10 @@ class Renderer: NSObject {
             renderEncoder.setRenderPipelineState(pipelineStates.simpleTextureSampling)
             // Calculate new display Transform and set vertex buffer
 
-            weak var texture = textureProvider.frameTexture()
+            weak var texture = textureProvider?.frameTexture()
             if texture == nil {
-                fatalError("failed to fetch texture for next frame")
+                print("failed to fetch texture for next frame")
+                return
             }
             let desiredSize = CGSize(width: texture!.width, height: texture!.height)
             var modelProjectionMatrix = self.displayTransform(
@@ -160,7 +161,7 @@ class Renderer: NSObject {
     func depthStencilTexture(viewIndex: Int, for commandBuffer: MTLCommandBuffer) -> MTLTexture?
 }
 
-protocol TextureProviding {
+protocol TextureProviding: AnyObject {
     func frameTexture() -> MTLTexture?
 }
 

@@ -14,12 +14,12 @@ struct PlayerView: View {
     var body: some View {
         ZStack {
             Color.black
-            if video.player.currentItem != nil {
+            if video.player?.currentItem != nil {
                 VideoPlayer(player: video.player)
                     .aspectRatio(video.aspectRatio, contentMode: .fit)
                     .contentMargins(20, for: .automatic)
                     .onAppear() {
-                        video.player.play()
+                        video.player?.play()
                     }
             }
         }

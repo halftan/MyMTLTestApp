@@ -36,8 +36,8 @@ VertexOut vertex_main(uint vertexID [[vertex_id]],
 }
 
 float2 texture_mapping(float2 texCoords, uint ampId) {
-//    return float2(texCoords.x * 0.5 + ampId * 0.5, texCoords.y);
-    return texCoords.xy;
+   return float2(texCoords.x * 0.5 + ampId * 0.5, texCoords.y);
+    // return texCoords.xy;
 }
 
 [[fragment]]

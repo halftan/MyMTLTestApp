@@ -233,8 +233,6 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 print("Error when calling CVMetalTextureCacheCreateTextureFromImage: \(result)")
                 return
             }
-            cvMetalTexture = nil
-            texture = nil
 
             cvMetalTexture = cvTexture
             texture = CVMetalTextureGetTexture(cvMetalTexture)

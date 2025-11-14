@@ -51,7 +51,7 @@ class VideoModel {
         return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
     }
 
-    let player: AVPlayer = AVPlayer()
+    var player: AVPlayer?
 
     private var timeObserver: Any?
     var statusObserver: NSKeyValueObservation?
@@ -64,10 +64,6 @@ class VideoModel {
 
     @MainActor
     deinit {
-        // Stop accessing security scoped resource if it exists
-        if let url = _url {
-            url.stopAccessingSecurityScopedResource()
-        }
         self.cleanup()
         print("VideoModel deinit: \(self)")
     }
@@ -98,7 +94,7 @@ class VideoModel {
 
             // Set up the player item and time observer when loading a new asset
             let playerItem = AVPlayerItem(asset: asset!)
-            player.replaceCurrentItem(with: playerItem)
+            player = AVPlayer(playerItem: playerItem)
             addPeriodicTimeObserver()
 
             try await parseVideoMetadata()
@@ -171,7 +167,7 @@ class VideoModel {
 
     private func addPeriodicTimeObserver() {
         let interval = CMTime(value: 1, timescale: 10)
-        self.timeObserver = self.player.addPeriodicTimeObserver(
+        self.timeObserver = self.player!.addPeriodicTimeObserver(
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
@@ -192,15 +188,27 @@ class VideoModel {
         print("\(self.debugDescription): Video cleanup called")
 
         // Pause the player
-        player.pause()
+        player?.pause()
 
         // Clean up player item and its associated resources
-        if let playerItem = player.currentItem {
+        if let playerItem = player?.currentItem {
             // Remove video output from player item before niling it
             if let videoOutput = videoOutput {
                 playerItem.remove(videoOutput)
             }
         }
+            // Remove time observer
+        if let timeObserver = timeObserver {
+            player?.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+        
+            // Invalidate status observer
+        if let statusObserver = statusObserver {
+            statusObserver.invalidate()
+            self.statusObserver = nil
+        }
+        player = nil
 
         // Stop accessing security scoped resource if it exists
         if let url = _url {
@@ -215,21 +223,6 @@ class VideoModel {
         }
 
         contentType = nil
-
-        // Remove time observer
-        if let timeObserver = timeObserver {
-            player.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
-        }
-
-        // Invalidate status observer
-        if let statusObserver = statusObserver {
-            statusObserver.invalidate()
-            self.statusObserver = nil
-        }
-
-        // Clear player item
-        player.replaceCurrentItem(with: nil)
 
         // Clear video output
         videoOutput = nil

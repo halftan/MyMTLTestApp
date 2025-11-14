@@ -49,10 +49,10 @@ struct PlayPlainVideoButton: View {
                             videoModel.cleanup()
                         }
                         Button("", systemImage: "play") {
-                            videoModel.player.play()
+                            videoModel.player?.play()
                         }
                         Button("", systemImage: "pause") {
-                            videoModel.player.pause()
+                            videoModel.player?.pause()
                         }
                     }
                     .backgroundStyle(.thinMaterial)
