@@ -69,7 +69,6 @@ struct ImmersiveVRView: View {
                 // playerEntity.setScale([newFrame.extents.x, newFrame.extents.y, newFrame.extents.z], relativeTo: root)
                 let baseTranslation = anchor.transform.translation
                 print("Anchor translation: \(baseTranslation)")
-                anchor.reanchor(.head, preservingWorldTransform: true)
                 root.transform.translation = .init(
                     x: baseTranslation.x + settings.translateX,
                     y: baseTranslation.y + settings.translateY,
