@@ -17,6 +17,20 @@ struct OpenVRImageButton: View {
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
+    func doOpenImmersiveSpace() async {
+        appModel.immersiveSpaceState = .inTransition
+        switch await openImmersiveSpace(id: appModel.immersiveViewID) {
+        case .opened:
+            settings.paused = false
+            break
+
+        case .userCancelled, .error:
+            fallthrough
+        @unknown default:
+            appModel.immersiveSpaceState = .closed
+        }
+    }
+
     var body: some View {
         VStack {
             Button("Select file") {
@@ -33,18 +47,7 @@ struct OpenVRImageButton: View {
                         appModel.immersiveSpaceState = .inTransition
                         await dismissImmersiveSpace()
                     case .closed:
-                        appModel.immersiveSpaceState = .inTransition
-                        switch await openImmersiveSpace(id: appModel.immersiveViewID) {
-                        case .opened:
-                            settings.paused = false
-                            break
-
-                        case .userCancelled, .error:
-                            fallthrough
-                        @unknown default:
-                            appModel.immersiveSpaceState = .closed
-                        }
-
+                        await doOpenImmersiveSpace()
                     case .inTransition:
                         // This case should not ever happen because button is disabled for this case.
                         break
@@ -71,6 +74,7 @@ struct OpenVRImageButton: View {
                 Task {
                     do {
                         try await appModel.videoModel.load(url)
+                        await doOpenImmersiveSpace()
                     } catch (let error) {
                         fatalError(error.localizedDescription)
                     }

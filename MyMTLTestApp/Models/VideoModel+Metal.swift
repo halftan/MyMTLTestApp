@@ -24,7 +24,7 @@ extension VideoModel {
     }
 
     func prepareForRender() async throws {
-        guard let playerItem = self.player?.currentItem else {
+        guard let playerItem = self.playerItem else {
             throw VideoModelError.initializationFailed("trying to setup video output before playerItem is set")
         }
         self.videoOutput = makeVideoOutput()

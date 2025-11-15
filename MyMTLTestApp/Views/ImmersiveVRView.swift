@@ -67,13 +67,13 @@ struct ImmersiveVRView: View {
                 // playerEntity.setTransformMatrix(.init(proxy.transform(in: .global)!), relativeTo: root)
                 // let newFrame = content.convert(proxy.frame(in: .global), from: .global, to: .scene)
                 // playerEntity.setScale([newFrame.extents.x, newFrame.extents.y, newFrame.extents.z], relativeTo: root)
-                let baseTranslation = anchor.transform.translation
-                print("Anchor translation: \(baseTranslation)")
-                root.transform.translation = .init(
-                    x: baseTranslation.x + settings.translateX,
-                    y: baseTranslation.y + settings.translateY,
-                    z: baseTranslation.z + settings.translateZ
-                )
+                // let baseTranslation = anchor.transform.translation
+                // print("Anchor translation: \(baseTranslation)")
+                // root.transform.translation = .init(
+                //     x: baseTranslation.x + settings.translateX,
+                //     y: baseTranslation.y + settings.translateY,
+                //     z: baseTranslation.z + settings.translateZ
+                // )
             }
             .onChange(of: settings.stereoOn, initial: true) {
                 playerEntity.setStereo(settings.stereoOn)

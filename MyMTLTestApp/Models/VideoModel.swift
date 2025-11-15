@@ -51,7 +51,9 @@ class VideoModel {
         return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
     }
 
-    var player: AVPlayer?
+    var player: AVQueuePlayer?
+    var playerItem: AVPlayerItem?
+    var looper: AVPlayerLooper?
 
     private var timeObserver: Any?
     var statusObserver: NSKeyValueObservation?
@@ -93,12 +95,16 @@ class VideoModel {
             asset = AVURLAsset(url: url)
 
             // Set up the player item and time observer when loading a new asset
-            let playerItem = AVPlayerItem(asset: asset!)
-            player = AVPlayer(playerItem: playerItem)
+            playerItem = AVPlayerItem(asset: asset!)
+            player = AVQueuePlayer()
+            player?.actionAtItemEnd = .advance
+            looper = AVPlayerLooper(player: player!, templateItem: playerItem!)
             addPeriodicTimeObserver()
 
             try await parseVideoMetadata()
             try await prepareForRender()
+            player!.play()
+            player!.replaceCurrentItem(with: playerItem)
         } else {
             isVideo = false
         }
@@ -125,7 +131,11 @@ class VideoModel {
 
         self.assetPreferredTransform = try await firstTrack.load(.preferredTransform)
 
-        videoColorProperties = [:]
+        videoColorProperties = [
+            AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+            AVVideoTransferFunctionKey: AVVideoTransferFunction_Linear,
+            AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+        ]
         videoColorProperties[AVVideoTransferFunctionKey] = AVVideoTransferFunction_Linear
         let formatDescriptions = try await firstTrack.load(.formatDescriptions)
         if let primaryFormatDescription = formatDescriptions.first {
@@ -202,12 +212,14 @@ class VideoModel {
             player?.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
-        
+
             // Invalidate status observer
         if let statusObserver = statusObserver {
             statusObserver.invalidate()
             self.statusObserver = nil
         }
+        looper = nil
+        playerItem = nil
         player = nil
 
         // Stop accessing security scoped resource if it exists
