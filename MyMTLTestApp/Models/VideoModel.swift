@@ -10,6 +10,7 @@ import Metal
 import MetalKit
 import SwiftUI
 import UniformTypeIdentifiers
+import Combine
 
 extension CGFloat {
     static var defaultAspectRatio: Self {
@@ -26,26 +27,25 @@ class VideoModel {
     // Private backing storage for the url property
     private var _url: URL?
 
-    private(set) var contentType: UTType!
+    private(set) var utType: UTType!
     private(set) var isVideo = true
+    private(set) var contentType: ContentType = .defaultType
+    private(set) var isPlaying: Bool = false
 
     // Observable time properties
     private(set) var currentTime: TimeInterval = 0.0
     private(set) var duration: TimeInterval = 0.0
+    var isEditingCurrentTime: Bool = false
 
     // Video track properties
+    @ObservationIgnored
     private(set) var naturalSize: CGSize = .zero
-    var aspectRatio: CGFloat {
-        if naturalSize != .zero {
-            return naturalSize.width / naturalSize.height
-        }
-        return .defaultAspectRatio
-    }
 
     private var asset: AVAsset?
     var assetIsHDR = false
     var assetPreferredTransform: CGAffineTransform = .identity
     var videoColorProperties: [String: any Sendable] = [:]
+    var videoOutputSettings: AVQueuePlayerWithOutput.VideoOutputSettings = [:]
 
     var transferFunction: String {
         return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
@@ -56,8 +56,9 @@ class VideoModel {
     var looper: AVPlayerLooper?
 
     private var timeObserver: Any?
+    private var subscriptions: Set<AnyCancellable> = []
     var statusObserver: NSKeyValueObservation?
-    var videoOutput: AVPlayerItemVideoOutput?
+//    var videoOutput: AVPlayerItemVideoOutput?
     //    var displayLink: CADisplayLink?
 
     init() {
@@ -86,35 +87,43 @@ class VideoModel {
         _url = url
 
         let resourceValue = try url.resourceValues(forKeys: [.contentTypeKey])
-        contentType = resourceValue.contentType
+        utType = resourceValue.contentType
 
-        if contentType.conforms(to: .movie) || contentType.conforms(to: .video) {
+        if utType.conforms(to: .movie) || utType.conforms(to: .video) {
             // video resource
             print("Resource is video")
             isVideo = true
             asset = AVURLAsset(url: url)
 
+            try await parseVideoMetadata(asset: asset!)
+            // Recreate asset to avoid side-affects caused by parsing metadata
+            asset = AVURLAsset(url: url)
+
             // Set up the player item and time observer when loading a new asset
             playerItem = AVPlayerItem(asset: asset!)
-            player = AVQueuePlayer()
-            player?.actionAtItemEnd = .advance
+            player = AVQueuePlayerWithOutput(videoOutputSettings: videoOutputSettings)
+            player!.actionAtItemEnd = .advance
             looper = AVPlayerLooper(player: player!, templateItem: playerItem!)
-            addPeriodicTimeObserver()
-
-            try await parseVideoMetadata()
-            try await prepareForRender()
+            addObservers()
+//            try await prepareForRender()
             player!.play()
             player!.replaceCurrentItem(with: playerItem)
         } else {
             isVideo = false
         }
+        setContentType()
+    }
+    
+    private func setContentType() {
+        // TODO: actually load the media format
+        if isVideo {
+            contentType = .video_yuv420_sbs
+        } else {
+            contentType = .image_sbs
+        }
     }
 
-    func parseVideoMetadata() async throws {
-        guard let asset = self.asset else {
-            print("Asset not ready yet for metadata parsing")
-            return
-        }
+    func parseVideoMetadata(asset: AVAsset) async throws {
         let videoTracks = try await asset.loadTracks(withMediaCharacteristic: .visual)
         if videoTracks.isEmpty {
             print("No video track found in asset")
@@ -128,6 +137,8 @@ class VideoModel {
         let size = try await firstTrack.load(.naturalSize)
         self.naturalSize = size
         print("Loaded natural size: \(size)")
+        self.duration = try await asset.load(.duration).seconds
+        print("Loaded duration: \(self.duration)")
 
         self.assetPreferredTransform = try await firstTrack.load(.preferredTransform)
 
@@ -173,9 +184,34 @@ class VideoModel {
         if formatDescriptions.count > 1 {
             print("Not handling multiple video format descriptions")
         }
+        
+        videoOutputSettings = [
+            // disable wide color support for vision os
+//            AVVideoAllowWideColorKey: true,
+            AVVideoColorPropertiesKey: videoColorProperties,
+            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
+            //            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_64RGBAHalf),
+            //            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8PlanarFullRange,
+        ]
     }
 
-    private func addPeriodicTimeObserver() {
+    private func addObservers() {
+        player!.publisher(for: \.timeControlStatus)
+            .sink { [weak self] status in
+                switch status {
+                case .playing:
+                    self?.isPlaying = true
+                case .paused:
+                    self?.isPlaying = false
+                case .waitingToPlayAtSpecifiedRate:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+            .store(in: &subscriptions)
+        
         let interval = CMTime(value: 1, timescale: 10)
         self.timeObserver = self.player!.addPeriodicTimeObserver(
             forInterval: interval,
@@ -187,11 +223,42 @@ class VideoModel {
             }
             Task { @MainActor in
                 // Update the observable properties on the main actor
-                self.currentTime = time.seconds
-                self.duration = self.duration
+                if !self.isEditingCurrentTime {
+                    self.currentTime = time.seconds
+                }
             }
         }
     }
+    
+//    func prepareForRender() async throws {
+//        guard let playerItem = self.playerItem else {
+//            throw VideoModelError.initializationFailed("trying to setup video output before playerItem is set")
+//        }
+//        self.videoOutput = makeVideoOutput()
+//        if self.videoOutput == nil{
+//            throw VideoModelError.initializationFailed("video output has not been initialized")
+//        }
+//        playerItem.add(self.videoOutput!)
+            //        #if os(visionOS)
+            //        displayLink = CADisplayLink(target: self, selector: #selector(displayLinkCopyPixelBuffers(link:)))
+            //        #elseif os(macOS)
+            //        displayLink = (NSApp.mainWindow?.displayLink(target: self, selector: #selector(displayLinkCopyPixelBuffers(link:))))!
+            //        #endif
+        
+            //        self.statusObserver = playerItem.observe(\.status,
+            //                                                  options: [.new, .old, .initial],
+            //                                                  changeHandler: { [weak self] playerItem, change in
+            //            Task { @MainActor in
+            //                guard let self = self else { return }
+            ////                guard let displayLink = self.displayLink else { return }
+            //                if playerItem.status == .readyToPlay {
+            //                    print("Set videoOutput: \(self.videoOutput?.debugDescription ?? "None")")
+            //                    playerItem.add(self.videoOutput!)
+            ////                    displayLink.add(to: .main, forMode: .common)
+            //                }
+            //            }
+            //        })
+//    }
 
     // Optional: Method to manually cleanup resources
     func cleanup() {
@@ -234,10 +301,7 @@ class VideoModel {
             self.asset = nil
         }
 
-        contentType = nil
-
-        // Clear video output
-        videoOutput = nil
+        utType = nil
 
         // Reset properties
         naturalSize = .zero

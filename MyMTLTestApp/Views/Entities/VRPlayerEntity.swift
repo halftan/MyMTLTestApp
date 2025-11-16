@@ -52,6 +52,11 @@ struct VRPlayerComponent: TransientComponent {}
 class VRPlayerEntity: Entity, HasModel, TextureProviding {
 
     var renderer: Renderer!
+    var contentType: ContentType {
+        get {
+            mediaProvider?.contentType ?? .defaultType
+        }
+    }
 
     var leftEyeTarget = RenderTarget()
     var rightEyeTarget = RenderTarget()
@@ -73,14 +78,27 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
     var colorPixelFormat: MTLPixelFormat = .rgba16Float
     var depthStencilPixelFormat: MTLPixelFormat = .depth32Float_stencil8
 
+    // main frame texture, can also be used as luma for BiPlanar
     var texture: MTLTexture!
+    var textureChroma: MTLTexture!
 
-    var videoModel: VideoModel?
+    var mediaProvider: MediaProvider!
     var mtlTextureCache: CVMetalTextureCache?
+    
+    // The main Metal texture, can also be used as luma for BiPlanar
     var cvMetalTexture: CVMetalTexture!
+    var cvMetalTextureChroma: CVMetalTexture!
 
     func frameTexture() -> (any MTLTexture)? {
         return texture
+    }
+    
+    func frameTextureLuma() -> (any MTLTexture)? {
+        return texture
+    }
+
+    func frameTextureChroma() -> (any MTLTexture)? {
+        return textureChroma
     }
 
     func makeRenderTarget(size: MTLSize) -> RenderTarget {
@@ -126,22 +144,22 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
     }
 
     @MainActor
-    func setup(resourceFile: URL, videoModel: VideoModel) async {
+    func setup(resourceFile: URL, provider: MediaProvider) async {
         self.device = MTLCreateSystemDefaultDevice()
 
         var size: MTLSize
-        self.videoModel = videoModel
-        if videoModel.isVideo {
+        mediaProvider = provider
+        if mediaProvider.isVideo {
             print("Loading video resource")
             self.mtlTextureCache = try! makeMetalTextureCache()
             size = .init(
-                width: Int(videoModel.naturalSize.width / 2), height: Int(videoModel.naturalSize.height), depth: 1
+                width: Int(mediaProvider.naturalSize.width / 2), height: Int(mediaProvider.naturalSize.height), depth: 1
             )
             // make a default texture
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: colorPixelFormat,
-                width: Int(videoModel.naturalSize.width / 2),
-                height: Int(videoModel.naturalSize.height),
+                width: Int(mediaProvider.naturalSize.width / 2),
+                height: Int(mediaProvider.naturalSize.height),
                 mipmapped: false
             )
             self.texture = device.makeTexture(descriptor: descriptor)
@@ -186,14 +204,14 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
     // var size: CGSize = .init(width: 100, height: 100)
 
     func createScene() {
-        renderer = Renderer(device: device, renderDestination: self, textureProvider: self) { [weak self] in
+        renderer = Renderer(device: device, renderDestination: self, textureProvider: self) { @MainActor [weak self] in
             guard let self else {
                 return
             }
 
             // TODO: update scene
 
-            if videoModel == nil || !videoModel!.isVideo {
+            if mediaProvider == nil || !mediaProvider!.isVideo {
                 return
             }
 
@@ -201,7 +219,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
             // maybe useful?
             // CVMetalTextureCacheFlush(self.mtlTextureCache!, 0)
 
-            guard let videoOutput = videoModel?.videoOutput else {
+            guard let videoOutput = mediaProvider?.videoOutput else {
                 print("video output not set!")
                 return
             }
@@ -213,29 +231,69 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 print("Failed to copy pixel buffer from video output")
                 return
             }
-            let pixelBufferWidth = CVPixelBufferGetWidth(pixelBuffer)
-            let pixelBufferHeight = CVPixelBufferGetHeight(pixelBuffer)
-
-            var cvTexture: CVMetalTexture?
-            let result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
+//            let pixelBufferWidth = CVPixelBufferGetWidth(pixelBuffer)
+//            let pixelBufferHeight = CVPixelBufferGetHeight(pixelBuffer)
+            
+//            var cvTexture: CVMetalTexture?
+//            let result = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault,
+//                self.mtlTextureCache!,
+//                pixelBuffer,
+//                nil,
+//                self.colorPixelFormat,
+//                pixelBufferWidth,
+//                pixelBufferHeight,
+//                0,
+//                &cvTexture)
+            let lumaW = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
+            let lumaH = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
+            
+            var lumaTexture: CVMetalTexture?
+            let resultLuma = CVMetalTextureCacheCreateTextureFromImage(
+                kCFAllocatorDefault,
                 self.mtlTextureCache!,
                 pixelBuffer,
                 nil,
-                self.colorPixelFormat,
-                pixelBufferWidth,
-                pixelBufferHeight,
+                .r16Unorm,
+                lumaW,
+                lumaH,
                 0,
-                &cvTexture)
-            switch result {
+                &lumaTexture
+            )
+            switch resultLuma {
             case kCVReturnSuccess:
                 break
             default:
-                print("Error when calling CVMetalTextureCacheCreateTextureFromImage: \(result)")
+                print("Error to fetch luma texture from plane 0: \(resultLuma)")
+                return
+            }
+            cvMetalTexture = lumaTexture
+            texture = CVMetalTextureGetTexture(lumaTexture!)
+
+            let chromaW = CVPixelBufferGetWidthOfPlane(pixelBuffer, 1)
+            let chromaH = CVPixelBufferGetHeightOfPlane(pixelBuffer, 1)
+            
+            var chromaTexture: CVMetalTexture?
+            let resultChroma = CVMetalTextureCacheCreateTextureFromImage(
+                kCFAllocatorDefault,
+                self.mtlTextureCache!,
+                pixelBuffer,
+                nil,
+                .rg16Unorm,
+                chromaW,
+                chromaH,
+                1,
+                &chromaTexture
+            )
+            switch resultChroma {
+            case kCVReturnSuccess:
+                break
+            default:
+                print("Error to fetch chroma texture from plane 1: \(resultChroma)")
                 return
             }
 
-            cvMetalTexture = cvTexture
-            texture = CVMetalTextureGetTexture(cvMetalTexture)
+            cvMetalTextureChroma = chromaTexture
+            textureChroma = CVMetalTextureGetTexture(chromaTexture!)
         }
     }
 
@@ -251,8 +309,8 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
         autoreleasepool {
             renderer.draw(provider: self)
         }
-        guard let isVideo = videoModel?.isVideo else {
-            // videoModel is nil, could be something wrong. Pause rendering
+        guard let isVideo = mediaProvider?.isVideo else {
+            // mediaProvider is nil, could be something wrong. Pause rendering
             paused = true
             return
         }

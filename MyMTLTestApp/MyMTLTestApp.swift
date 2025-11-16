@@ -47,6 +47,7 @@ struct MyMTLTestApp: App {
                 .environment(settings)
         }
         .immersionStyle(selection: .constant(.full), in: .mixed, .full)
+        .upperLimbVisibility(settings.showHandsInImmersiveView)
         #endif
     }
 }

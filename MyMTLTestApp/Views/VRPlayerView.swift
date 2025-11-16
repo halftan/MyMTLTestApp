@@ -31,7 +31,7 @@ struct VRPlayerView: View {
 
                     content.add(root)
                     root.addChild(playerEntity)
-                    await playerEntity.setup(resourceFile: resourceFile, videoModel: appModel.videoModel)
+                    await playerEntity.setup(resourceFile: resourceFile, provider: appModel.videoModel)
 //                    await playerEntity.setup(resourceFile: resourceFile, frameSize: .init(width: proxy.size.width, height: proxy.size.height))
                         //                if let affineTransform = area.transform(in: .local) {
                         // //                    affineTransform.matrix4x4

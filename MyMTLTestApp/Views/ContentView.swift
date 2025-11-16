@@ -35,7 +35,7 @@ struct ContentView: View {
 //            .padding(.horizontal)
 
             OpenVRImageButton()
-                .padding(.horizontal)
+                .padding()
 
             #endif
         }

@@ -14,7 +14,7 @@ let maxFramesInFlight = 3
 #if os(visionOS)
 
 class Renderer: NSObject {
-
+    
     let device: MTLDevice
 
     let commandQueue: MTLCommandQueue!
@@ -136,14 +136,41 @@ class Renderer: NSObject {
                 print("failed to fetch texture for next frame")
                 return
             }
-            let desiredSize = CGSize(width: texture!.width, height: texture!.height)
-            var modelProjectionMatrix = self.displayTransform(
-                frameSize: desiredSize,
-                contentTransform: .identity,
-                displaySize: desiredSize
-            )
-            renderEncoder.setVertexBytes(&modelProjectionMatrix, length: MemoryLayout<float4x4>.stride, index: 0)
+//            let desiredSize = CGSize(width: texture!.width, height: texture!.height)
+//            var modelProjectionMatrix = self.displayTransform(
+//                frameSize: desiredSize,
+//                contentTransform: .identity,
+//                displaySize: desiredSize
+//            )
+//            renderEncoder.setVertexBytes(&modelProjectionMatrix, length: MemoryLayout<float4x4>.stride, index: 0)
             renderEncoder.setFragmentTexture(texture, index: 0)
+
+            renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
+    }
+
+    func encodeYUVSampleStage(using renderEncoder: MTLRenderCommandEncoder) {
+        encodeStage(using: renderEncoder, label: "BiPlanar Sample stage") {
+            renderEncoder.setRenderPipelineState(pipelineStates.biPlanarTextureSampling)
+            // Calculate new display Transform and set vertex buffer
+
+            guard let luma = textureProvider?.frameTextureLuma() else {
+                print("failed to get luma texture")
+                return
+            }
+            guard let chroma = textureProvider?.frameTextureChroma() else {
+                print("failed to get chroma texture")
+                return
+            }
+//            let desiredSize = CGSize(width: luma.width, height: luma.height)
+//            var modelProjectionMatrix = self.displayTransform(
+//                frameSize: desiredSize,
+//                contentTransform: .identity,
+//                displaySize: desiredSize
+//            )
+//            renderEncoder.setVertexBytes(&modelProjectionMatrix, length: MemoryLayout<float4x4>.stride, index: 0)
+            renderEncoder.setFragmentTexture(luma, index: 0)
+            renderEncoder.setFragmentTexture(chroma, index: 1)
 
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
@@ -162,7 +189,10 @@ class Renderer: NSObject {
 }
 
 protocol TextureProviding: AnyObject {
+    var contentType: ContentType { get }
     func frameTexture() -> MTLTexture?
+    func frameTextureLuma() -> MTLTexture?
+    func frameTextureChroma() -> MTLTexture?
 }
 
 extension Renderer {
@@ -190,7 +220,17 @@ extension Renderer {
                 encodePass(into: commandBuffer, using: defaultPassDescriptor, label: "Default render pass") { renderEncoder in
                     var viewIndex = viewIndex
                     renderEncoder.setFragmentBytes(&viewIndex, length: MemoryLayout<Int>.size, index: 0)
-                    encodeSampleStage(using: renderEncoder)
+//                    encodeSampleStage(using: renderEncoder)
+                    switch textureProvider?.contentType {
+                    case .video_srgb_sbs:
+                        fallthrough
+                    case .video_yuv420_sbs:
+                        encodeYUVSampleStage(using: renderEncoder)
+                    case .image_sbs:
+                        fallthrough
+                    default:
+                        encodeSampleStage(using: renderEncoder)
+                    }
                 }
             }
 

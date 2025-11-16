@@ -10,9 +10,21 @@ import Metal
 struct PipelineStates {
 
     lazy var simpleTextureSampling = makeRenderPipelineState(label: "Texture Sampling") { descriptor in
-        descriptor.vertexFunction = library.makeFunction(name: "vertex_main")
+        descriptor.vertexFunction = library.makeFunction(name: "vertex_fullscreen")
         descriptor.fragmentFunction = library.makeFunction(name: "fragment_linear_sbs")
-        
+        // descriptor.fragmentFunction = library.makeFunction(name: "fragment_tonemap_hlg")
+
+        // TODO: add depth stencil to the scene
+        descriptor.depthAttachmentPixelFormat = .invalid
+        descriptor.stencilAttachmentPixelFormat = .invalid
+        descriptor.colorAttachments[0]?.pixelFormat = colorPixelFormat
+    }
+    
+    lazy var biPlanarTextureSampling = makeRenderPipelineState(label: "BiPlanar Texture Sampling") { descriptor in
+        descriptor.vertexFunction = library.makeFunction(name: "vertex_fullscreen")
+        descriptor.fragmentFunction = library.makeFunction(name: "fragment_biplanar_sbs")
+        // descriptor.fragmentFunction = library.makeFunction(name: "fragment_tonemap_hlg")
+
         // TODO: add depth stencil to the scene
         descriptor.depthAttachmentPixelFormat = .invalid
         descriptor.stencilAttachmentPixelFormat = .invalid

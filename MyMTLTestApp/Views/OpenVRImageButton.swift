@@ -21,7 +21,6 @@ struct OpenVRImageButton: View {
         appModel.immersiveSpaceState = .inTransition
         switch await openImmersiveSpace(id: appModel.immersiveViewID) {
         case .opened:
-            settings.paused = false
             break
 
         case .userCancelled, .error:
@@ -37,13 +36,12 @@ struct OpenVRImageButton: View {
                 showFileImporter = true
             }
             .glassBackgroundEffect()
-            .padding()
 
             Button {
                 Task { @MainActor in
                     switch appModel.immersiveSpaceState {
                     case .open:
-                        settings.paused = true
+                        await appModel.videoModel.stop()
                         appModel.immersiveSpaceState = .inTransition
                         await dismissImmersiveSpace()
                     case .closed:

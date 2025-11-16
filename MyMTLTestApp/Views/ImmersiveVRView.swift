@@ -53,7 +53,7 @@ struct ImmersiveVRView: View {
                 playerEntity.scale = .init(x: 1, y: 1, z: -1)
                 await playerEntity.setup(
                     resourceFile: resourceFileURL,
-                    videoModel: appModel.videoModel)
+                    provider: appModel.videoModel)
                 // if let affineTransform = area.transform(in: .local) {
                 //     affineTransform.matrix4x4
                 //     playerEntity.setTransformMatrix(.init(affineTransform), relativeTo: nil)
@@ -67,19 +67,21 @@ struct ImmersiveVRView: View {
                 // playerEntity.setTransformMatrix(.init(proxy.transform(in: .global)!), relativeTo: root)
                 // let newFrame = content.convert(proxy.frame(in: .global), from: .global, to: .scene)
                 // playerEntity.setScale([newFrame.extents.x, newFrame.extents.y, newFrame.extents.z], relativeTo: root)
-                // let baseTranslation = anchor.transform.translation
-                // print("Anchor translation: \(baseTranslation)")
-                // root.transform.translation = .init(
-                //     x: baseTranslation.x + settings.translateX,
-                //     y: baseTranslation.y + settings.translateY,
-                //     z: baseTranslation.z + settings.translateZ
-                // )
+                 let baseTranslation = anchor.transform.translation
+                 root.transform.translation = .init(
+                     x: baseTranslation.x + settings.translateX,
+                     y: baseTranslation.y + settings.translateY,
+                     z: baseTranslation.z + settings.translateZ
+                 )
+                print("Settings translation to: \(root.transform.translation)")
             }
             .onChange(of: settings.stereoOn, initial: true) {
                 playerEntity.setStereo(settings.stereoOn)
             }
-            .onChange(of: settings.paused, initial: true) {
-                playerEntity.paused = settings.paused
+            .onChange(of: appModel.videoModel.isPlaying, initial: true) {
+                if appModel.videoModel.isVideo {
+                    playerEntity.paused = !appModel.videoModel.isPlaying
+                }
             }
             .onDisappear {
                 print("Disappeared")

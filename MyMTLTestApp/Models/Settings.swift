@@ -2,10 +2,11 @@
 //  Settings.swift
 //  MyMTLTestApp
 //
-//  Created by 张凤鸣 on 2025/11/13.
+//  Created by Andy Zhang on 2025/11/13.
 //
 
 import Foundation
+import SwiftUI
 
 @Observable
 class Settings {
@@ -27,10 +28,10 @@ class Settings {
 
         static var defaultType: Self { .stereo }
     }
+    
+    var showHandsInImmersiveView: Visibility = .hidden
 
     var stereoType: StereoType = .defaultType
 
     var stereoOn: Bool = true
-
-    var paused: Bool = false
 }
