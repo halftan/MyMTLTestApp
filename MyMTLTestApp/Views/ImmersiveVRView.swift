@@ -73,7 +73,6 @@ struct ImmersiveVRView: View {
                      y: baseTranslation.y + settings.translateY,
                      z: baseTranslation.z + settings.translateZ
                  )
-                print("Settings translation to: \(root.transform.translation)")
             }
             .onChange(of: settings.stereoOn, initial: true) {
                 playerEntity.setStereo(settings.stereoOn)

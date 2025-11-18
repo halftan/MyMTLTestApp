@@ -21,6 +21,7 @@ struct PlaybackControlsView: View {
     @State private var duration: TimeInterval = .zero
 
     @State private var isEditingState: Bool = false
+    @State private var isVideoTransporting: Bool = false
     
     private let durationFormatter: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
@@ -76,16 +77,18 @@ struct PlaybackControlsView: View {
             Slider(value: $currentTime, in: 0...duration, onEditingChanged: { isEditing in
                 isEditingState = isEditing
                 if isEditing == false {
+                    isVideoTransporting = true
                     Task {
                         print("Seek to \(currentTime)")
                         let result = await media.seek(to: .init(seconds: currentTime, preferredTimescale: 2))
                         print("Seek result is: \(result)")
+                        isVideoTransporting = false
                     }
                 }
             })
             .frame(width: 280)
             .onChange(of: media.currentTime, initial: true) { _, newVal in
-                if !isEditingState {
+                if !(isEditingState || isVideoTransporting) {
                     currentTime = newVal
                     currentTimeString = durationFormatter.string(from: currentTime) ?? "00:00"
                 }
