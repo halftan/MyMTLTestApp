@@ -8,8 +8,10 @@
 import SwiftUI
 import AVFoundation
 
+#if os(visionOS)
+
 struct PlaybackControlsView: View {
-    private var media: MediaPlaybackProvider
+    private var media: Playable
     
     @Environment(AppModel.self) private var appModel
     @Environment(Settings.self) private var settings
@@ -30,7 +32,7 @@ struct PlaybackControlsView: View {
         return formatter
     }()
 
-    init(media: MediaPlaybackProvider) {
+    init(media: Playable) {
         self.media = media
     }
     
@@ -108,3 +110,4 @@ struct PlaybackControlsView: View {
     }
 }
 
+#endif

@@ -12,24 +12,17 @@ struct PipelineStates {
     lazy var simpleTextureSampling = makeRenderPipelineState(label: "Texture Sampling") { descriptor in
         descriptor.vertexFunction = library.makeFunction(name: "vertex_fullscreen")
         descriptor.fragmentFunction = library.makeFunction(name: "fragment_linear_sbs")
-        // descriptor.fragmentFunction = library.makeFunction(name: "fragment_tonemap_hlg")
 
         // TODO: add depth stencil to the scene
         descriptor.depthAttachmentPixelFormat = .invalid
         descriptor.stencilAttachmentPixelFormat = .invalid
         descriptor.colorAttachments[0]?.pixelFormat = colorPixelFormat
     }
-    
-    lazy var biPlanarTextureSampling = makeRenderPipelineState(label: "BiPlanar Texture Sampling") { descriptor in
-        descriptor.vertexFunction = library.makeFunction(name: "vertex_fullscreen")
-        descriptor.fragmentFunction = library.makeFunction(name: "fragment_biplanar_sbs")
-        // descriptor.fragmentFunction = library.makeFunction(name: "fragment_tonemap_hlg")
 
-        // TODO: add depth stencil to the scene
-        descriptor.depthAttachmentPixelFormat = .invalid
-        descriptor.stencilAttachmentPixelFormat = .invalid
-        descriptor.colorAttachments[0]?.pixelFormat = colorPixelFormat
-    }
+    lazy var biPlanar8BitFullTextureSampling = makeYUVRenderPipelineStage(bitDepth: 8, isFullRange: true)
+    lazy var biPlanar10BitFullTextureSampling = makeYUVRenderPipelineStage(bitDepth: 10, isFullRange: true)
+    lazy var biPlanar8BitLimitedTextureSampling = makeYUVRenderPipelineStage(bitDepth: 8, isFullRange: false)
+    lazy var biPlanar10BitLimitedTextureSampling = makeYUVRenderPipelineStage(bitDepth: 10, isFullRange: false)
 
     let device: MTLDevice
     let library: MTLLibrary
@@ -56,6 +49,18 @@ struct PipelineStates {
             return try device.makeRenderPipelineState(descriptor: descriptor)
         } catch {
             fatalError(error.localizedDescription)
+        }
+    }
+
+    func makeYUVRenderPipelineStage(bitDepth: Int, isFullRange: Bool = false) -> MTLRenderPipelineState {
+        makeRenderPipelineState(label: "BiPlanar \(bitDepth)bit \(isFullRange ? "Full" : "Limited") Range Texture Sampling") { descriptor in
+            descriptor.vertexFunction = library.makeFunction(name: "vertex_fullscreen")
+            descriptor.fragmentFunction = library.makeFunction(name: "fragment_\(bitDepth)bit_\(isFullRange ? "full" : "limited")_sbs")
+
+            // TODO: add depth stencil to the scene
+            descriptor.depthAttachmentPixelFormat = .invalid
+            descriptor.stencilAttachmentPixelFormat = .invalid
+            descriptor.colorAttachments[0]?.pixelFormat = colorPixelFormat
         }
     }
 }

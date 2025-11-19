@@ -13,7 +13,6 @@ protocol MakeVideoOutputDelegate: Sendable {
 
 @MainActor
 class AVQueuePlayerWithOutput: AVQueuePlayer {
-    typealias VideoOutputSettings = [String: any Sendable]
 
     let videoOutputSettings: VideoOutputSettings
     

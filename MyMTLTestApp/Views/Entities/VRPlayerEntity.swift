@@ -49,14 +49,8 @@ func createFramebufferMaterial(leftEyeTexture: LowLevelTexture, rightEyeTexture:
 
 struct VRPlayerComponent: TransientComponent {}
 
-class VRPlayerEntity: Entity, HasModel, TextureProviding {
-
+class VRPlayerEntity: Entity, HasModel {
     var renderer: Renderer!
-    var contentType: ContentType {
-        get {
-            mediaProvider?.contentType ?? .defaultType
-        }
-    }
 
     var leftEyeTarget = RenderTarget()
     var rightEyeTarget = RenderTarget()
@@ -82,24 +76,12 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
     var texture: MTLTexture!
     var textureChroma: MTLTexture!
 
-    var mediaProvider: MediaProvider!
+    var mediaProvider: Playable!
     var mtlTextureCache: CVMetalTextureCache?
     
     // The main Metal texture, can also be used as luma for BiPlanar
     var cvMetalTexture: CVMetalTexture!
     var cvMetalTextureChroma: CVMetalTexture!
-
-    func frameTexture() -> (any MTLTexture)? {
-        return texture
-    }
-    
-    func frameTextureLuma() -> (any MTLTexture)? {
-        return texture
-    }
-
-    func frameTextureChroma() -> (any MTLTexture)? {
-        return textureChroma
-    }
 
     func makeRenderTarget(size: MTLSize) -> RenderTarget {
         let colorTexture = try! LowLevelTexture(descriptor: .init(textureType: .type2D,
@@ -144,7 +126,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
     }
 
     @MainActor
-    func setup(resourceFile: URL, provider: MediaProvider) async {
+    func setup(resourceFile: URL, provider: Playable) async {
         self.device = MTLCreateSystemDefaultDevice()
 
         var size: MTLSize
@@ -209,8 +191,6 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 return
             }
 
-            // TODO: update scene
-
             if mediaProvider == nil || !mediaProvider!.isVideo {
                 return
             }
@@ -231,6 +211,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 print("Failed to copy pixel buffer from video output")
                 return
             }
+
 //            let pixelBufferWidth = CVPixelBufferGetWidth(pixelBuffer)
 //            let pixelBufferHeight = CVPixelBufferGetHeight(pixelBuffer)
             
@@ -244,6 +225,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
 //                pixelBufferHeight,
 //                0,
 //                &cvTexture)
+            
             let lumaW = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
             let lumaH = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
             
@@ -253,7 +235,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 self.mtlTextureCache!,
                 pixelBuffer,
                 nil,
-                .r16Unorm,
+                mediaProvider.bitDepth == .bit10 ? .r16Unorm : .r8Unorm,
                 lumaW,
                 lumaH,
                 0,
@@ -278,7 +260,7 @@ class VRPlayerEntity: Entity, HasModel, TextureProviding {
                 self.mtlTextureCache!,
                 pixelBuffer,
                 nil,
-                .rg16Unorm,
+                mediaProvider.bitDepth == .bit10 ? .rg16Unorm : .rg8Unorm,
                 chromaW,
                 chromaH,
                 1,

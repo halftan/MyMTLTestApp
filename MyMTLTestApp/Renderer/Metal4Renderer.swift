@@ -369,7 +369,7 @@ class Metal4Renderer: NSObject, @MainActor RenderDelegate {
             return
         }
 
-        let videoIsHDR = videoModel?.assetIsHDR ?? false
+        let videoIsHDR = videoModel?.isHDR ?? false
         if (tonemappingMode == .edr) && videoIsHDR && metalLayer.edrMetadata == nil {
             if CAEDRMetadata.isAvailable {
                 metalLayer.edrMetadata = CAEDRMetadata.hdr10(minLuminance: 0.005,

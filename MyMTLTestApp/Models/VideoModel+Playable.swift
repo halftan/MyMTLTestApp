@@ -7,14 +7,14 @@
 
 import AVFoundation
 
-extension VideoModel: MediaProvider {
+extension VideoModel: Playable {
     var videoOutput: AVPlayerItemVideoOutput? {
         get {
             let output = self.player?.currentItem?.outputs.first as? AVPlayerItemVideoOutput
             return output
         }
     }
-    
+
     var aspectRatio: CGFloat {
         get {
             if naturalSize != .zero {
@@ -23,10 +23,7 @@ extension VideoModel: MediaProvider {
             return .defaultAspectRatio
         }
     }
-}
 
-extension VideoModel: MediaPlaybackProvider {
-    
     nonisolated func seek(to: CMTime) async -> Bool {
         guard let player = await player else {
             print("Failed to obtain current player")
@@ -34,7 +31,7 @@ extension VideoModel: MediaPlaybackProvider {
         }
         return await player.seek(to: to)
     }
-    
+
     nonisolated func stop() async {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -42,7 +39,7 @@ extension VideoModel: MediaPlaybackProvider {
             cleanup()
         }
     }
-    
+
     func play() {
         guard let player = player else {
             print("Failed to obtain current player")
@@ -50,7 +47,7 @@ extension VideoModel: MediaPlaybackProvider {
         }
         player.play()
     }
-    
+
     func pause() {
         guard let player = player else {
             print("Failed to obtain current player")

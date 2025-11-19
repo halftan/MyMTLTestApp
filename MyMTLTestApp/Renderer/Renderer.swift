@@ -136,39 +136,23 @@ class Renderer: NSObject {
                 print("failed to fetch texture for next frame")
                 return
             }
-//            let desiredSize = CGSize(width: texture!.width, height: texture!.height)
-//            var modelProjectionMatrix = self.displayTransform(
-//                frameSize: desiredSize,
-//                contentTransform: .identity,
-//                displaySize: desiredSize
-//            )
-//            renderEncoder.setVertexBytes(&modelProjectionMatrix, length: MemoryLayout<float4x4>.stride, index: 0)
             renderEncoder.setFragmentTexture(texture, index: 0)
 
             renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
     }
 
-    func encodeYUVSampleStage(using renderEncoder: MTLRenderCommandEncoder) {
+    func encodeYUVSampleStage(using renderEncoder: MTLRenderCommandEncoder,
+                              bitDepth: BitDepth = .bit8, isFullRange: Bool = false) {
         encodeStage(using: renderEncoder, label: "BiPlanar Sample stage") {
-            renderEncoder.setRenderPipelineState(pipelineStates.biPlanarTextureSampling)
-            // Calculate new display Transform and set vertex buffer
-
-            guard let luma = textureProvider?.frameTextureLuma() else {
-                print("failed to get luma texture")
-                return
+            switch bitDepth {
+            case .bit8:
+                renderEncoder.setRenderPipelineState(pipelineStates.biPlanar8BitLimitedTextureSampling)
+            case .bit10:
+                renderEncoder.setRenderPipelineState(pipelineStates.biPlanar10BitLimitedTextureSampling)
             }
-            guard let chroma = textureProvider?.frameTextureChroma() else {
-                print("failed to get chroma texture")
-                return
-            }
-//            let desiredSize = CGSize(width: luma.width, height: luma.height)
-//            var modelProjectionMatrix = self.displayTransform(
-//                frameSize: desiredSize,
-//                contentTransform: .identity,
-//                displaySize: desiredSize
-//            )
-//            renderEncoder.setVertexBytes(&modelProjectionMatrix, length: MemoryLayout<float4x4>.stride, index: 0)
+            guard let luma = textureProvider!.frameTextureLuma() else { return }
+            guard let chroma = textureProvider!.frameTextureChroma() else { return }
             renderEncoder.setFragmentTexture(luma, index: 0)
             renderEncoder.setFragmentTexture(chroma, index: 1)
 
@@ -189,7 +173,11 @@ class Renderer: NSObject {
 }
 
 protocol TextureProviding: AnyObject {
-    var contentType: ContentType { get }
+    var isVideo: Bool { get }
+    var bitDepth: BitDepth { get }
+    var isFullRange: Bool { get }
+    var isGammaEncoded: Bool { get }
+    var stereoType: SteroeType { get }
     func frameTexture() -> MTLTexture?
     func frameTextureLuma() -> MTLTexture?
     func frameTextureChroma() -> MTLTexture?
@@ -218,17 +206,23 @@ extension Renderer {
 //                defaultPassDescriptor.stencilAttachment.texture = depthStencil
 
                 encodePass(into: commandBuffer, using: defaultPassDescriptor, label: "Default render pass") { renderEncoder in
+                    guard let textureProvider = textureProvider else {
+                        print("No texture provider set!!!")
+                        return
+                    }
                     var viewIndex = viewIndex
                     renderEncoder.setFragmentBytes(&viewIndex, length: MemoryLayout<Int>.size, index: 0)
+
+                    var isGammaEncoded: Int = textureProvider.isGammaEncoded ? 1 : 0
+                    renderEncoder.setFragmentBytes(&isGammaEncoded, length: MemoryLayout<Int>.size, index: 1)
+
 //                    encodeSampleStage(using: renderEncoder)
-                    switch textureProvider?.contentType {
-                    case .video_srgb_sbs:
-                        fallthrough
-                    case .video_yuv420_sbs:
-                        encodeYUVSampleStage(using: renderEncoder)
-                    case .image_sbs:
-                        fallthrough
-                    default:
+                    if textureProvider.isVideo {
+                        // Video should always use YUV pixelFormat
+                        encodeYUVSampleStage(using: renderEncoder,
+                                             bitDepth: textureProvider.bitDepth,
+                                             isFullRange: textureProvider.isFullRange)
+                    } else {
                         encodeSampleStage(using: renderEncoder)
                     }
                 }
@@ -243,40 +237,6 @@ extension Renderer {
 
         self.size = size
         drawableSizeWillChange?(device, size, storageMode)
-    }
-}
-
-extension Renderer {
-    func displayTransform(frameSize: CGSize,
-                                  contentTransform: CGAffineTransform,
-                                  displaySize: CGSize) -> simd_float4x4
-    {
-        // The natural frame of a video track is the bounding rect of the image containing a frame's contents.
-        let naturalFrame = CGRectMake(0, 0, frameSize.width, frameSize.height)
-        // The video frame is the bounding rect of a frame after transformation by the track's preferred transform.
-        let videoFrame = CGRectApplyAffineTransform(naturalFrame, contentTransform)
-        // Vertices in the vertex shader are the corners of a canonical (unit) square; this transform reshapes
-        // that square so its size matches the natural frame of the video.
-        let naturalFromCanonicalTransform = CGAffineTransformMakeScale(frameSize.width, frameSize.height)
-        // Concatenating the preferred transform of the video with the natural-from-canonical transform produces
-        // a transform that scales, rotates, and translates the unit square into the final video frame size and orientation.
-        let videoFromCanonicalTransform = CGAffineTransformConcat(naturalFromCanonicalTransform, contentTransform)
-        let videoFrameMatrix = simd_float4x4(videoFromCanonicalTransform)
-        // To display the video in an aspect-correct manner, we transform the bounds of the video frame
-        // so that they fit tightly within the bounding rect of the surface to be presented.
-        let displayBounds = CGRect(x: 0, y: 0, width: displaySize.width, height: displaySize.height)
-        let modelMatrix = transformForAspectFitting(videoFrame, in: displayBounds)
-        // The projection matrix takes us from coordinates expressed relative to the presentation surface's bounds
-        // into clip space.
-        let projectionMatrix = float4x4.orthographicProjection(left: 0,
-                                                               top: 0,
-                                                               right: Float(displayBounds.width),
-                                                               bottom: Float(displayBounds.height),
-                                                               near: -1,
-                                                               far: 1)
-        // The final model–projection matrix combines the effects of the above transforms.
-        let videoTransform = projectionMatrix * modelMatrix * videoFrameMatrix
-        return videoTransform
     }
 }
 

@@ -35,7 +35,7 @@ struct OpenVRImageButton: View {
             Button("Select file") {
                 showFileImporter = true
             }
-            .glassBackgroundEffect()
+            .backgroundStyle(.thinMaterial)
 
             Button {
                 Task { @MainActor in

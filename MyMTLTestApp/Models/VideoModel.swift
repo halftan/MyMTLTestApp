@@ -29,7 +29,12 @@ class VideoModel {
 
     private(set) var utType: UTType!
     private(set) var isVideo = true
-    private(set) var contentType: ContentType = .defaultType
+    private(set) var stereoType: SteroeType = .defaultType
+    private(set) var bitDepth: BitDepth = .bit8
+    private(set) var isFullRange: Bool = false
+    private(set) var isGammaEncoded: Bool = false
+    private(set) var isHDR: Bool = false
+
     private(set) var isPlaying: Bool = false
 
     // Observable time properties
@@ -42,10 +47,9 @@ class VideoModel {
     private(set) var naturalSize: CGSize = .zero
 
     private var asset: AVAsset?
-    var assetIsHDR = false
     var assetPreferredTransform: CGAffineTransform = .identity
     var videoColorProperties: [String: any Sendable] = [:]
-    var videoOutputSettings: AVQueuePlayerWithOutput.VideoOutputSettings = [:]
+    var videoOutputSettings: VideoOutputSettings = [:]
 
     var transferFunction: String {
         return videoColorProperties[AVVideoTransferFunctionKey] as? String ?? ""
@@ -61,10 +65,6 @@ class VideoModel {
 //    var videoOutput: AVPlayerItemVideoOutput?
     //    var displayLink: CADisplayLink?
 
-    init() {
-        print("Initializing video model")
-    }
-
     @MainActor
     deinit {
         self.cleanup()
@@ -74,6 +74,7 @@ class VideoModel {
     func load(_ url: URL) async throws {
         // Stop accessing the old URL's security scoped resource if it exists
         if let oldURL = _url {
+            print("Previously loaded URL not released properly!")
             oldURL.stopAccessingSecurityScopedResource()
         }
 
@@ -111,16 +112,6 @@ class VideoModel {
         } else {
             isVideo = false
         }
-        setContentType()
-    }
-    
-    private func setContentType() {
-        // TODO: actually load the media format
-        if isVideo {
-            contentType = .video_yuv420_sbs
-        } else {
-            contentType = .image_sbs
-        }
     }
 
     func parseVideoMetadata(asset: AVAsset) async throws {
@@ -131,7 +122,7 @@ class VideoModel {
         }
 
         let hdrTracks = try await asset.loadTracks(withMediaCharacteristic: .containsHDRVideo)
-        self.assetIsHDR = !hdrTracks.isEmpty
+        isHDR = !hdrTracks.isEmpty
 
         let firstTrack = videoTracks.first!
         let size = try await firstTrack.load(.naturalSize)
@@ -154,6 +145,7 @@ class VideoModel {
                 print(
                     "Transfer function: \(transferFunctionValue) : plist: \(transferFunctionValue.propertyListRepresentation)"
                 )
+                isGammaEncoded = true
                 let transferFunction = transferFunctionValue.propertyListRepresentation as! CFString
                 if transferFunction
                     == CMFormatDescription.Extensions.Value.TransferFunction.itu_R_2020.rawValue
@@ -168,29 +160,65 @@ class VideoModel {
                 print(
                     "Selected output transfer function: \(String(describing: videoColorProperties[AVVideoTransferFunctionKey]))"
                 )
+            } else {
+                isGammaEncoded = false
+                print("No transfer function set, using linear (gamma encoded)")
             }
             if let videoColorPrimaries = primaryFormatDescription.extensions[.colorPrimaries] {
                 print("Color primaries: \(videoColorPrimaries.propertyListRepresentation)")
                 videoColorProperties[AVVideoColorPrimariesKey] =
                     videoColorPrimaries.propertyListRepresentation as! String
-
+            } else {
+                print("Cannot obtain color primaries, using default value: \(self.videoColorProperties[AVVideoColorPrimariesKey] ?? "none")")
             }
             if let videoYCbCrMatrix = primaryFormatDescription.extensions[.yCbCrMatrix] {
                 print("YCbCrMatrix: \(videoYCbCrMatrix.propertyListRepresentation)")
                 videoColorProperties[AVVideoYCbCrMatrixKey] =
                     videoYCbCrMatrix.propertyListRepresentation as! String
+            } else {
+                print("Cannot obtain YCbCrMatrix, using default value: \(self.videoColorProperties[AVVideoYCbCrMatrixKey] ?? "none")")
             }
+            // parsing color range and bit width
+            isFullRange = primaryFormatDescription.extensions[.fullRangeVideo] == .number(1)
+            if let bitsPerComponent = primaryFormatDescription.extensions[.bitsPerComponent] {
+                if bitsPerComponent == .number(8) {
+                    bitDepth = .bit8
+                } else if bitsPerComponent == .number(10)  {
+                    bitDepth = .bit10
+                } else {
+                    throw VideoModelError.unknownFormat("bitDepth: \(bitsPerComponent.propertyListRepresentation)")
+                }
+            } else {
+                print("Cannot obtain bitDepth, using default value: \(self.bitDepth)")
+            }
+            print("Video isFullRange: \(isFullRange), bitDepth: \(bitDepth)")
         }
         if formatDescriptions.count > 1 {
             print("Not handling multiple video format descriptions")
         }
-        
+
+        var pixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        switch bitDepth {
+        case .bit8:
+            pixelFormatType =
+                isFullRange
+                ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+                : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        case .bit10:
+            pixelFormatType =
+            isFullRange
+            ? kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
+            : kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+        }
+
+        print("Chose pixel format type: \(pixelFormatType.description)")
+
         videoOutputSettings = [
             // disable wide color support for vision os
 //            AVVideoAllowWideColorKey: true,
             AVVideoColorPropertiesKey: videoColorProperties,
             kCVPixelBufferMetalCompatibilityKey as String: true,
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
+            kCVPixelBufferPixelFormatTypeKey as String: pixelFormatType,
             //            kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_64RGBAHalf),
             //            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8PlanarFullRange,
         ]
@@ -211,7 +239,7 @@ class VideoModel {
                 }
             }
             .store(in: &subscriptions)
-        
+
         let interval = CMTime(value: 1, timescale: 10)
         self.timeObserver = self.player!.addPeriodicTimeObserver(
             forInterval: interval,
@@ -229,7 +257,7 @@ class VideoModel {
             }
         }
     }
-    
+
 //    func prepareForRender() async throws {
 //        guard let playerItem = self.playerItem else {
 //            throw VideoModelError.initializationFailed("trying to setup video output before playerItem is set")
@@ -244,7 +272,7 @@ class VideoModel {
             //        #elseif os(macOS)
             //        displayLink = (NSApp.mainWindow?.displayLink(target: self, selector: #selector(displayLinkCopyPixelBuffers(link:))))!
             //        #endif
-        
+
             //        self.statusObserver = playerItem.observe(\.status,
             //                                                  options: [.new, .old, .initial],
             //                                                  changeHandler: { [weak self] playerItem, change in
@@ -307,7 +335,10 @@ class VideoModel {
         naturalSize = .zero
         currentTime = 0.0
         duration = 0.0
-        assetIsHDR = false
+        isHDR = false
+        isVideo = false
+        isFullRange = false
+        bitDepth = .bit8
         assetPreferredTransform = .identity
         videoColorProperties = [:]
 
@@ -322,6 +353,7 @@ class VideoModel {
 enum VideoModelError: Error {
     case securityScopedResourceAccessFailed(URL)
     case initializationFailed(String)
+    case unknownFormat(String)
 
     var localizedDescription: String {
         switch self {
@@ -329,6 +361,8 @@ enum VideoModelError: Error {
             return "Failed to start accessing security scoped resource for: \(url)"
         case .initializationFailed(let desc):
             return "Failed to initialize VideoModel: \(desc)"
+        case .unknownFormat(let desc):
+            return "Failed to parse asset with unknown format: \(desc)"
         }
     }
 }

@@ -1,6 +1,8 @@
 import SwiftUI
 import AVFoundation
 
+#if os(visionOS)
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(Settings.self) private var settings
@@ -43,3 +45,5 @@ struct SettingsView: View {
         }
     }
 }
+
+#endif

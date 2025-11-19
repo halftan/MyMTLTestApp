@@ -17,9 +17,12 @@ struct MyMTLTestApp: App {
             ContentView()
                 .environment(appModel)
                 .environment(settings)
+            
+            #if os(visionOS)
             SettingsView()
                 .environment(appModel)
                 .environment(settings)
+            #endif
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
